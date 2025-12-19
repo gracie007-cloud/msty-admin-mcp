@@ -2,9 +2,9 @@
 
 **AI-Administered Msty Studio Desktop Management System**
 
-An MCP (Model Context Protocol) server that enables Claude Desktop to act as an intelligent system administrator for Msty Studio Desktop, providing database insights, configuration management, hardware optimization, and seamless sync capabilities.
+An MCP (Model Context Protocol) server that enables Claude Desktop to act as an intelligent system administrator for Msty Studio Desktop, providing database insights, configuration management, local AI orchestration, and seamless sync capabilities.
 
-[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/M-Pineapple/msty-admin-mcp)
+[![Version](https://img.shields.io/badge/version-3.0.1-blue.svg)](https://github.com/M-Pineapple/msty-admin-mcp)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10+-yellow.svg)](https://python.org)
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://apple.com)
@@ -16,8 +16,8 @@ Msty Admin MCP bridges the gap between Claude Desktop and Msty Studio Desktop, e
 - **Database Insights**: Query conversations, personas, prompts, and tools directly
 - **Health Monitoring**: Comprehensive system health analysis and recommendations
 - **Configuration Sync**: Export/import tools between Claude Desktop and Msty
+- **Local AI Orchestration**: Chat with local models via Sidecar API
 - **Hardware Optimization**: Apple Silicon-optimized model recommendations
-- **Tiered AI Workflow**: Local model calibration with Claude Opus handoff
 
 ## 🚀 Features
 
@@ -32,28 +32,40 @@ Msty Admin MCP bridges the gap between Claude Desktop and Msty Studio Desktop, e
 | `analyse_msty_health` | Check database integrity, storage, model cache status |
 | `get_server_status` | Server info and available capabilities |
 
-### Phase 2: Configuration Management (Planned)
+### Phase 2: Configuration Management ✅
 
-- `export_tool_config` - Generate MCP tool JSON for sync
-- `generate_persona` - Create persona configurations
-- `sync_claude_preferences` - Convert Claude Desktop prefs to Msty format
-- `import_tool_config` - Import tool configurations into Msty
+| Tool | Description |
+|------|-------------|
+| `export_tool_config` | Export MCP tool configurations for backup/sync |
+| `sync_claude_preferences` | Convert Claude Desktop preferences to Msty persona |
+| `generate_persona` | Create persona configurations from templates |
+| `import_tool_config` | Import and validate tool configurations |
 
-### Phase 3: Automation Bridge (Planned)
+### Phase 3: Automation Bridge ✅
 
-- `open_msty_studio` - Launch application programmatically
-- `trigger_toolbox_import` - AppleScript automation for imports
-- `backup_msty_data` - Create timestamped backups
-- `restore_from_backup` - Restore previous configurations
+| Tool | Description |
+|------|-------------|
+| `get_sidecar_status` | Comprehensive Sidecar and Local AI Service health check |
+| `list_available_models` | Query models available via Sidecar API |
+| `query_local_ai_service` | Low-level access to Ollama-compatible API |
+| `chat_with_local_model` | Send messages to local models (supports thinking models) |
+| `recommend_model` | Hardware-aware model recommendations by use case |
 
-### Phase 4: Intelligence Layer (Planned)
+**API Integration:**
+- Local AI Service: `http://127.0.0.1:11964` (Ollama-compatible)
+- Sidecar Proxy: `http://127.0.0.1:11932`
 
-- `recommend_models_for_hardware` - Mac specs → optimal MLX models
-- `analyse_conversation_patterns` - Usage insights
-- `optimise_knowledge_stacks` - Performance recommendations
-- `suggest_persona_improvements` - AI-powered persona optimization
+### Phase 4: Intelligence Layer (Planning)
 
-### Phase 5: Local Model Calibration & Handoff (Planned)
+| Tool | Description |
+|------|-------------|
+| `analyse_conversation_patterns` | Usage insights from chat history |
+| `get_model_performance_metrics` | Track tokens/sec, latency per model |
+| `optimise_knowledge_stacks` | Performance recommendations |
+| `suggest_persona_improvements` | AI-powered persona optimization |
+| `compare_model_responses` | Side-by-side quality comparison |
+
+### Phase 5: Tiered AI Workflow (Future)
 
 The ultimate goal: run local MLX models that perform at Claude Opus level for routine tasks, with seamless escalation to Claude when complexity demands it.
 
@@ -82,24 +94,6 @@ The ultimate goal: run local MLX models that perform at Claude Opus level for ro
 └─────────────────────────────────────────────────┘
 ```
 
-**Calibration Protocol:**
-1. Test prompts sent to both local model AND Claude Opus (benchmark)
-2. Claude Opus evaluates local output against its own benchmark
-3. Scoring: Accuracy, Reasoning, Style, Tool Use, Safety
-4. Auto-tune recommendations applied to Msty persona
-5. Iterate until local model achieves "Opus approval"
-
-**Phase 5 Tools:**
-- `create_opus_persona` - Generate Msty persona with Universal Preferences
-- `sync_mcp_toolbox` - Mirror Claude Desktop MCP config to Msty
-- `run_calibration_suite` - Execute test prompts against local model
-- `evaluate_response_pair` - Opus compares local vs benchmark
-- `generate_tuning_recommendations` - Auto-suggest config adjustments
-- `apply_persona_adjustments` - Auto-update Msty persona
-- `prepare_handoff_context` - Package state for Claude escalation
-- `identify_handoff_triggers` - Learn which prompts need escalation
-- `track_calibration_history` - Monitor improvement over iterations
-
 ## 📦 Installation
 
 ### Prerequisites
@@ -109,7 +103,7 @@ The ultimate goal: run local MLX models that perform at Claude Opus level for ro
 - Msty Studio Desktop installed
 - Claude Desktop with MCP support
 
-### Quick Install
+### Quick Install (Recommended)
 
 ```bash
 # Clone the repository
@@ -140,16 +134,16 @@ Add to your `~/Library/Application Support/Claude/claude_desktop_config.json`:
 }
 ```
 
-### Msty Studio Configuration
-
-Import the tool via Toolbox → Add New Tool → Import from JSON:
+Or using uvx:
 
 ```json
 {
-  "command": "python",
-  "args": ["-m", "src.server"],
-  "cwd": "/path/to/msty-admin-mcp",
-  "env": {}
+  "mcpServers": {
+    "msty-admin": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/M-Pineapple/msty-admin-mcp", "msty-admin"]
+    }
+  }
 }
 ```
 
@@ -175,14 +169,22 @@ Once configured, ask Claude to use the Msty Admin tools:
 
 ```
 "Run a health check on my Msty installation"
-"Is my Msty database healthy? Any recommendations?"
+"Is Sidecar running? What models are available?"
 ```
 
-### Model Providers
+### Chat with Local Models
 
 ```
-"What AI models do I have configured in Msty?"
-"List my local MLX models"
+"Send 'Hello world' to qwen3:0.6b via Msty"
+"What local models are available for coding tasks?"
+"Recommend a model for fast responses on my hardware"
+```
+
+### Configuration Sync
+
+```
+"Export my Claude Desktop MCP tools for Msty"
+"Generate an Opus-style persona for Msty"
 ```
 
 ## 📁 Project Structure
@@ -191,12 +193,7 @@ Once configured, ask Claude to use the Msty Admin tools:
 msty-admin-mcp/
 ├── src/
 │   ├── __init__.py          # Package initialization
-│   ├── server.py            # Main FastMCP server (Phase 1)
-│   ├── database/            # Database operations (Phase 2+)
-│   ├── config/              # Configuration sync (Phase 2+)
-│   ├── hardware/            # Hardware detection (Phase 4)
-│   ├── automation/          # AppleScript integration (Phase 3)
-│   └── utils/               # Shared utilities
+│   └── server.py            # Main FastMCP server (all phases)
 ├── tests/
 │   └── test_server.py       # Unit tests
 ├── pyproject.toml           # Modern Python packaging
@@ -213,13 +210,13 @@ The MCP server automatically detects these locations:
 |-----------|------------|
 | Application | `/Applications/MstyStudio.app` |
 | Data Directory | `~/Library/Application Support/MstyStudio/` |
-| Database | `~/Library/Application Support/MstyStudio/msty.db` |
-| MLX Models | `~/Library/Application Support/MstyStudio/models-mlx/` |
 | Sidecar | `~/Library/Application Support/MstySidecar/` |
+| Database | `~/Library/Application Support/MstySidecar/SharedStorage` |
+| MLX Models | `~/Library/Application Support/MstyStudio/models-mlx/` |
 
 ## 🔒 Security
 
-- **Read-Only Database Access**: Phase 1 tools only read from the database
+- **Read-Only Database Access**: Database queries use read-only connections
 - **API Keys Redacted**: Provider queries automatically redact sensitive credentials
 - **Local Only**: All operations happen on your local machine
 - **No Telemetry**: Zero data collection or external communication
@@ -232,15 +229,19 @@ Ensure Msty Studio Desktop has been run at least once to create the database.
 
 ### "Sidecar not running"
 
-Start Sidecar from Terminal for best dependency detection:
+Start Sidecar from Terminal:
 
 ```bash
 open -a MstySidecar
 ```
 
-### Database locked
+### "Local AI Service not responding"
 
-If Msty Studio is running, it may have a lock on the database. The MCP uses read-only mode but occasional locks can occur.
+Check that Sidecar is running and models are loaded in Msty Studio.
+
+### Empty responses from thinking models (qwen3)
+
+Fixed in v3.0.1 - the tool now correctly handles models that return reasoning in a separate field.
 
 ## 🤝 Contributing
 
@@ -263,6 +264,7 @@ Built for seamless integration between Claude Desktop and Msty Studio Desktop.
 
 ---
 
-**Current Version**: 2.0.0 (Phase 1)  
-**Last Updated**: December 2025  
+**Current Version**: 3.0.1 (Phase 3 Complete)  
+**Tools Available**: 15  
+**Last Updated**: 19 December 2025  
 **Platform**: macOS (Apple Silicon optimized)
