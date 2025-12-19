@@ -671,6 +671,12 @@ def analyse_msty_health() -> str:
     return json.dumps(asdict(health), indent=2)
 
 
+# Sidecar API Configuration
+SIDECAR_PROXY_PORT = 11932      # Sidecar proxy/web interface
+LOCAL_AI_SERVICE_PORT = 11964   # Ollama-compatible Local AI Service
+SIDECAR_TIMEOUT = 10            # Request timeout in seconds
+
+
 @mcp.tool()
 def get_server_status() -> str:
     """
@@ -687,7 +693,7 @@ def get_server_status() -> str:
     status = {
         "server": {
             "name": "msty-admin-mcp",
-            "version": "3.0.0",
+            "version": "3.0.1",
             "phase": "Phase 3 - Automation Bridge",
             "author": "Pineapple 🍍"
         },
@@ -1385,12 +1391,6 @@ def import_tool_config(
 # Phase 3: Automation Bridge - Sidecar API Integration
 # =============================================================================
 
-# Sidecar API Configuration
-SIDECAR_PROXY_PORT = 11932      # Sidecar proxy/web interface
-LOCAL_AI_SERVICE_PORT = 11964   # Ollama-compatible Local AI Service
-SIDECAR_TIMEOUT = 10            # Request timeout in seconds
-
-
 def get_sidecar_config() -> Dict[str, Any]:
     """Read Sidecar configuration from config.json"""
     paths = get_msty_paths()
@@ -1757,10 +1757,25 @@ def chat_with_local_model(
         # Extract response content
         if "choices" in data and data["choices"]:
             choice = data["choices"][0]
+            msg = choice.get("message", {})
+            
+            # Handle both standard content and reasoning-only responses (qwen3 thinking models)
+            content = msg.get("content", "")
+            reasoning = msg.get("reasoning", "")
+            
+            # Use content if available, otherwise fall back to reasoning
+            final_content = content if content else reasoning
+            
             result["response"] = {
-                "content": choice.get("message", {}).get("content", ""),
+                "content": final_content,
                 "finish_reason": choice.get("finish_reason")
             }
+            
+            # Include reasoning separately if both exist
+            if content and reasoning:
+                result["response"]["reasoning"] = reasoning
+            elif reasoning and not content:
+                result["response"]["note"] = "Response from reasoning field (thinking model)"
         else:
             result["response"] = {"raw": data}
         
@@ -1900,7 +1915,7 @@ def recommend_model(
 
 def main():
     """Run the Msty Admin MCP server"""
-    logger.info("Starting Msty Admin MCP Server v3.0.0")
+    logger.info("Starting Msty Admin MCP Server v3.0.1")
     logger.info("Phase 1: Foundational Tools (Read-Only)")
     logger.info("Phase 2: Configuration Management")
     logger.info("Phase 3: Automation Bridge")
