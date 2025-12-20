@@ -1,10 +1,10 @@
-# 🍍 Msty Admin MCP
+# 🍍 Msty Admin MCP v4.0.0
 
 **AI-Administered Msty Studio Desktop Management System**
 
-An MCP (Model Context Protocol) server that enables Claude Desktop to act as an intelligent system administrator for Msty Studio Desktop, providing database insights, configuration management, hardware optimization, and seamless sync capabilities.
+An MCP (Model Context Protocol) server that enables Claude Desktop to act as an intelligent system administrator for Msty Studio Desktop, providing database insights, configuration management, local model orchestration, and tiered AI workflow capabilities.
 
-[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/M-Pineapple/msty-admin-mcp)
+[![Version](https://img.shields.io/badge/version-4.0.0-blue.svg)](https://github.com/M-Pineapple/msty-admin-mcp)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10+-yellow.svg)](https://python.org)
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://apple.com)
@@ -16,8 +16,9 @@ Msty Admin MCP bridges the gap between Claude Desktop and Msty Studio Desktop, e
 - **Database Insights**: Query conversations, personas, prompts, and tools directly
 - **Health Monitoring**: Comprehensive system health analysis and recommendations
 - **Configuration Sync**: Export/import tools between Claude Desktop and Msty
-- **Hardware Optimization**: Apple Silicon-optimized model recommendations
-- **Tiered AI Workflow**: Local model calibration with Claude Opus handoff
+- **Sidecar Integration**: Direct access to local AI models via Ollama-compatible API
+- **Intelligence Layer**: Performance metrics, conversation analytics, model comparison
+- **Tiered AI Workflow**: Local model calibration with Claude escalation triggers
 
 ## 🚀 Features
 
@@ -32,30 +33,47 @@ Msty Admin MCP bridges the gap between Claude Desktop and Msty Studio Desktop, e
 | `analyse_msty_health` | Check database integrity, storage, model cache status |
 | `get_server_status` | Server info and available capabilities |
 
-### Phase 2: Configuration Management (Planned)
+### Phase 2: Configuration Management ✅
 
-- `export_tool_config` - Generate MCP tool JSON for sync
-- `generate_persona` - Create persona configurations
-- `sync_claude_preferences` - Convert Claude Desktop prefs to Msty format
-- `import_tool_config` - Import tool configurations into Msty
+| Tool | Description |
+|------|-------------|
+| `export_tool_config` | Export MCP tool configurations for backup or sync |
+| `sync_claude_preferences` | Convert Claude Desktop preferences to Msty persona |
+| `generate_persona` | Create persona configurations from templates |
+| `import_tool_config` | Validate and prepare tools for Msty import |
 
-### Phase 3: Automation Bridge (Planned)
+### Phase 3: Automation Bridge ✅
 
-- `open_msty_studio` - Launch application programmatically
-- `trigger_toolbox_import` - AppleScript automation for imports
-- `backup_msty_data` - Create timestamped backups
-- `restore_from_backup` - Restore previous configurations
+| Tool | Description |
+|------|-------------|
+| `get_sidecar_status` | Check Sidecar and Local AI Service status |
+| `list_available_models` | List all models via Sidecar's Ollama-compatible API |
+| `query_local_ai_service` | Direct API access to Local AI Service |
+| `chat_with_local_model` | Send messages to local models with metric tracking |
+| `recommend_model` | Get model recommendations based on use case |
 
-### Phase 4: Intelligence Layer (Planned)
+### Phase 4: Intelligence Layer ✅ **NEW**
 
-- `recommend_models_for_hardware` - Mac specs → optimal MLX models
-- `analyse_conversation_patterns` - Usage insights
-- `optimise_knowledge_stacks` - Performance recommendations
-- `suggest_persona_improvements` - AI-powered persona optimization
+| Tool | Description |
+|------|-------------|
+| `get_model_performance_metrics` | Aggregated metrics: tokens/sec, latency, error rates |
+| `analyse_conversation_patterns` | Privacy-respecting usage analytics from Msty database |
+| `compare_model_responses` | Send same prompt to multiple models, compare quality/speed |
+| `optimise_knowledge_stacks` | Analyse and recommend knowledge stack improvements |
+| `suggest_persona_improvements` | AI-powered suggestions for persona optimization |
 
-### Phase 5: Local Model Calibration & Handoff (Planned)
+### Phase 5: Tiered AI Workflow ✅ **NEW**
 
-The ultimate goal: run local MLX models that perform at Claude Opus level for routine tasks, with seamless escalation to Claude when complexity demands it.
+| Tool | Description |
+|------|-------------|
+| `run_calibration_test` | Run quality tests on local models by category |
+| `evaluate_response_quality` | Score any response using heuristic evaluation |
+| `identify_handoff_triggers` | Track patterns that should escalate to Claude |
+| `get_calibration_history` | Historical test results with trends and statistics |
+
+## 📊 Tiered AI Architecture
+
+The goal: Run local models for routine tasks with seamless escalation to Claude when complexity demands it.
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -65,15 +83,17 @@ The ultimate goal: run local MLX models that perform at Claude Opus level for ro
          ┌────────────┴────────────┐
          ▼                         ▼
 ┌─────────────────┐      ┌─────────────────┐
-│   Local MLX     │      │   Claude Opus   │
+│   Local Model   │      │   Claude        │
 │   (Routine)     │      │   (Complex)     │
 │                 │      │                 │
-│ • File ops      │      │ • Architecture  │
-│ • Simple code   │      │ • Deep analysis │
+│ • Simple tasks  │      │ • Architecture  │
+│ • Quick queries │      │ • Deep analysis │
 │ • Status checks │      │ • Creative work │
-│ • Data queries  │      │ • Multi-step    │
+│ • Data lookup   │      │ • Multi-step    │
 └────────┬────────┘      └────────┬────────┘
          │                        │
+         │    Handoff Triggers    │
+         │    ← ─ ─ ─ ─ ─ ─ ─ ─→  │
          └────────────┬───────────┘
                       ▼
 ┌─────────────────────────────────────────────────┐
@@ -82,34 +102,35 @@ The ultimate goal: run local MLX models that perform at Claude Opus level for ro
 └─────────────────────────────────────────────────┘
 ```
 
-**Calibration Protocol:**
-1. Test prompts sent to both local model AND Claude Opus (benchmark)
-2. Claude Opus evaluates local output against its own benchmark
-3. Scoring: Accuracy, Reasoning, Style, Tool Use, Safety
-4. Auto-tune recommendations applied to Msty persona
-5. Iterate until local model achieves "Opus approval"
+### Calibration Categories
 
-**Phase 5 Tools:**
-- `create_opus_persona` - Generate Msty persona with Universal Preferences
-- `sync_mcp_toolbox` - Mirror Claude Desktop MCP config to Msty
-- `run_calibration_suite` - Execute test prompts against local model
-- `evaluate_response_pair` - Opus compares local vs benchmark
-- `generate_tuning_recommendations` - Auto-suggest config adjustments
-- `apply_persona_adjustments` - Auto-update Msty persona
-- `prepare_handoff_context` - Package state for Claude escalation
-- `identify_handoff_triggers` - Learn which prompts need escalation
-- `track_calibration_history` - Monitor improvement over iterations
+The calibration system tests models across these categories:
+
+- **Reasoning**: Logic puzzles, mathematical problems
+- **Coding**: Code generation, algorithm implementation
+- **Writing**: Professional writing, British English
+- **Analysis**: Critical thinking, trade-off analysis
+- **Creative**: Story writing, creative tasks
+
+### Metrics Database
+
+Performance metrics are stored in `~/.msty-admin/msty_admin_metrics.db`:
+
+- **model_metrics**: Per-request performance tracking
+- **calibration_tests**: Test results with quality scores
+- **handoff_triggers**: Patterns requiring escalation
+- **conversation_analytics**: Aggregated usage statistics
 
 ## 📦 Installation
 
 ### Prerequisites
 
-- macOS (Apple Silicon recommended)
+- macOS (Apple Silicon or Intel)
 - Python 3.10+
-- Msty Studio Desktop installed
-- Claude Desktop with MCP support
+- [Msty Studio Desktop](https://msty.ai) installed
+- Msty Sidecar running (for Phase 3-5 features)
 
-### Quick Install
+### Setup
 
 ```bash
 # Clone the repository
@@ -117,16 +138,16 @@ git clone https://github.com/M-Pineapple/msty-admin-mcp.git
 cd msty-admin-mcp
 
 # Create virtual environment
-python3 -m venv .venv
+python -m venv .venv
 source .venv/bin/activate
 
 # Install dependencies
-pip install -e .
+pip install -r requirements.txt
 ```
 
 ### Claude Desktop Configuration
 
-Add to your `~/Library/Application Support/Claude/claude_desktop_config.json`:
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
@@ -140,129 +161,114 @@ Add to your `~/Library/Application Support/Claude/claude_desktop_config.json`:
 }
 ```
 
-### Msty Studio Configuration
+## 🔧 Usage Examples
 
-Import the tool via Toolbox → Add New Tool → Import from JSON:
-
-```json
-{
-  "command": "python",
-  "args": ["-m", "src.server"],
-  "cwd": "/path/to/msty-admin-mcp",
-  "env": {}
-}
-```
-
-## 🔧 Usage
-
-Once configured, ask Claude to use the Msty Admin tools:
-
-### Check Installation
+### Check Msty Installation
 
 ```
-"Check if Msty Studio is installed and get its status"
+"What's the status of my Msty installation?"
+→ Uses detect_msty_installation
 ```
 
-### Database Insights
+### Query Database
 
 ```
-"Show me statistics about my Msty database"
-"List all my configured personas in Msty"
-"What MCP tools do I have in Msty's Toolbox?"
+"Show me my Msty personas"
+→ Uses read_msty_database with query_type="personas"
 ```
 
-### Health Check
+### Chat with Local Model
 
 ```
-"Run a health check on my Msty installation"
-"Is my Msty database healthy? Any recommendations?"
+"Ask my local Qwen model to explain async/await in Python"
+→ Uses chat_with_local_model
 ```
 
-### Model Providers
+### Compare Models
 
 ```
-"What AI models do I have configured in Msty?"
-"List my local MLX models"
+"Compare all my local models on a coding task"
+→ Uses compare_model_responses
 ```
 
-## 📁 Project Structure
+### Run Calibration
+
+```
+"Run calibration tests on my local model for coding tasks"
+→ Uses run_calibration_test with category="coding"
+```
+
+### Check Performance
+
+```
+"Show me performance metrics for my local models"
+→ Uses get_model_performance_metrics
+```
+
+## 🏗️ Project Structure
 
 ```
 msty-admin-mcp/
 ├── src/
-│   ├── __init__.py          # Package initialization
-│   ├── server.py            # Main FastMCP server (Phase 1)
-│   ├── database/            # Database operations (Phase 2+)
-│   ├── config/              # Configuration sync (Phase 2+)
-│   ├── hardware/            # Hardware detection (Phase 4)
-│   ├── automation/          # AppleScript integration (Phase 3)
-│   └── utils/               # Shared utilities
+│   ├── __init__.py
+│   ├── server.py              # Main MCP server (24 tools)
+│   ├── phase4_5_tools.py      # Intelligence & Calibration utilities
+│   ├── intelligence/          # Phase 4 modules
+│   └── calibration/           # Phase 5 modules
 ├── tests/
-│   └── test_server.py       # Unit tests
-├── pyproject.toml           # Modern Python packaging
-├── requirements.txt         # Dependencies
-├── LICENSE                  # MIT License
-└── README.md               # This file
+│   └── test_server.py
+├── requirements.txt
+├── pyproject.toml
+└── README.md
 ```
 
-## 🗂️ Msty Studio Paths
+## 📈 Changelog
 
-The MCP server automatically detects these locations:
+### v4.0.0 (2025-12-20)
 
-| Component | macOS Path |
-|-----------|------------|
-| Application | `/Applications/MstyStudio.app` |
-| Data Directory | `~/Library/Application Support/MstyStudio/` |
-| Database | `~/Library/Application Support/MstyStudio/msty.db` |
-| MLX Models | `~/Library/Application Support/MstyStudio/models-mlx/` |
-| Sidecar | `~/Library/Application Support/MstySidecar/` |
+- **Phase 4: Intelligence Layer** - 5 new tools for analytics and optimization
+- **Phase 5: Tiered AI Workflow** - 4 new calibration tools
+- Metrics database system for performance tracking
+- Heuristic response quality evaluation
+- Handoff trigger identification and tracking
+- Total tools: 24
 
-## 🔒 Security
+### v3.0.1 (2025-12-19)
 
-- **Read-Only Database Access**: Phase 1 tools only read from the database
-- **API Keys Redacted**: Provider queries automatically redact sensitive credentials
-- **Local Only**: All operations happen on your local machine
-- **No Telemetry**: Zero data collection or external communication
+- Fixed compatibility with qwen3:0.6b thinking model
+- Improved response handling for reasoning-only outputs
+- Enhanced error handling in chat_with_local_model
 
-## 🐛 Troubleshooting
+### v3.0.0 (2025-12-19)
 
-### "Msty database not found"
+- Phase 3: Automation Bridge complete
+- Sidecar API integration via Ollama-compatible endpoints
+- Direct local model chat capability
+- Model recommendations based on use case
 
-Ensure Msty Studio Desktop has been run at least once to create the database.
+### v2.0.0 (2025-12-18)
 
-### "Sidecar not running"
+- Phase 2: Configuration Management complete
+- Tool export/import between Claude Desktop and Msty
+- Persona generation with templates
 
-Start Sidecar from Terminal for best dependency detection:
+### v1.0.0 (2025-12-17)
 
-```bash
-open -a MstySidecar
-```
-
-### Database locked
-
-If Msty Studio is running, it may have a lock on the database. The MCP uses read-only mode but occasional locks can occur.
+- Initial release
+- Phase 1: Foundational Tools
 
 ## 🤝 Contributing
 
-Contributions welcome! Please:
+Contributions welcome! Please read our contributing guidelines before submitting PRs.
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
-
-## 📜 License
+## 📄 License
 
 MIT License - see [LICENSE](LICENSE) for details.
 
-## 🍍 Credits
+## 🍍 Author
 
-Created by **Pineapple 🍍** as part of the AI-Administered Local System project.
-
-Built for seamless integration between Claude Desktop and Msty Studio Desktop.
+Created by **Pineapple** 🍍 AI Administration System
 
 ---
 
-**Current Version**: 2.0.0 (Phase 1)  
-**Last Updated**: December 2025  
-**Platform**: macOS (Apple Silicon optimized)
+*"Making local AI models work smarter, not harder."*

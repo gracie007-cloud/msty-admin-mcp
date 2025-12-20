@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Msty Admin MCP Server
+Msty Admin MCP Server v4.0.0
 
 AI-administered Msty Studio Desktop management system with database insights,
 configuration management, hardware optimization, and Claude Desktop sync.
@@ -26,6 +26,19 @@ Phase 3: Automation Bridge
 - chat_with_local_model
 - recommend_model
 
+Phase 4: Intelligence Layer
+- get_model_performance_metrics
+- analyse_conversation_patterns
+- compare_model_responses
+- optimise_knowledge_stacks
+- suggest_persona_improvements
+
+Phase 5: Tiered AI Workflow
+- run_calibration_test
+- evaluate_response_quality
+- identify_handoff_triggers
+- get_calibration_history
+
 Created by Pineapple 🍍 AI Administration System
 """
 
@@ -36,6 +49,7 @@ import platform
 import sqlite3
 import urllib.request
 import urllib.error
+import time
 from dataclasses import dataclass, asdict, field
 from datetime import datetime
 from pathlib import Path
@@ -43,6 +57,20 @@ from typing import Any, Optional, Dict, List
 
 import psutil
 from mcp.server.fastmcp import FastMCP
+
+# Import Phase 4 & 5 utilities
+from .phase4_5_tools import (
+    init_metrics_db,
+    record_model_metric,
+    get_model_metrics_summary,
+    save_calibration_result,
+    get_calibration_results,
+    record_handoff_trigger,
+    get_handoff_triggers,
+    evaluate_response_heuristic,
+    CALIBRATION_PROMPTS,
+    QUALITY_RUBRIC
+)
 
 # Configure logging
 logging.basicConfig(
@@ -53,6 +81,15 @@ logger = logging.getLogger("msty-admin-mcp")
 
 # Initialize FastMCP server
 mcp = FastMCP("msty-admin")
+
+# =============================================================================
+# Constants
+# =============================================================================
+
+SERVER_VERSION = "4.0.0"
+SIDECAR_PROXY_PORT = 11932
+LOCAL_AI_SERVICE_PORT = 11964
+SIDECAR_TIMEOUT = 10
 
 # =============================================================================
 # Data Classes
@@ -76,7 +113,7 @@ class MstyInstallation:
 @dataclass
 class MstyHealthReport:
     """Msty Studio health analysis"""
-    overall_status: str  # healthy, warning, critical
+    overall_status: str
     database_status: dict = field(default_factory=dict)
     storage_status: dict = field(default_factory=dict)
     model_cache_status: dict = field(default_factory=dict)
@@ -97,6 +134,22 @@ class DatabaseStats:
     last_activity: Optional[str] = None
 
 
+@dataclass
+class PersonaConfig:
+    """Msty persona configuration structure"""
+    name: str
+    description: str = ""
+    system_prompt: str = ""
+    temperature: float = 0.7
+    top_p: float = 0.9
+    max_tokens: int = 4096
+    model_preference: Optional[str] = None
+    knowledge_stacks: list = field(default_factory=list)
+    tools_enabled: list = field(default_factory=list)
+    created_at: str = ""
+    updated_at: str = ""
+
+
 # =============================================================================
 # Path Resolution Utilities
 # =============================================================================
@@ -110,43 +163,28 @@ def get_msty_paths() -> dict:
         "app_alt": Path("/Applications/Msty Studio.app"),
         "data": home / "Library/Application Support/MstyStudio",
         "sidecar": home / "Library/Application Support/MstySidecar",
-        "legacy_app": Path("/Applications/Msty.app"),
-        "legacy_data": home / "Library/Application Support/Msty",
     }
     
-    # Resolve actual paths
     resolved = {}
     for key, path in paths.items():
         resolved[key] = str(path) if path.exists() else None
     
-    # Find database - check multiple locations
     resolved["database"] = None
-    
-    # Primary: SharedStorage in Sidecar folder (Msty 2.x)
     if resolved["sidecar"]:
         sidecar_db = Path(resolved["sidecar"]) / "SharedStorage"
         if sidecar_db.exists():
             resolved["database"] = str(sidecar_db)
     
-    # Fallback: msty.db in data folder (older versions)
     if not resolved["database"] and resolved["data"]:
         data_db = Path(resolved["data"]) / "msty.db"
         if data_db.exists():
             resolved["database"] = str(data_db)
     
-    # MLX models path
     if resolved["data"]:
         mlx_path = Path(resolved["data"]) / "models-mlx"
         resolved["mlx_models"] = str(mlx_path) if mlx_path.exists() else None
     else:
         resolved["mlx_models"] = None
-    
-    # Check sidecar token
-    if resolved["sidecar"]:
-        token_path = Path(resolved["sidecar"]) / ".token"
-        resolved["sidecar_token"] = str(token_path) if token_path.exists() else None
-    else:
-        resolved["sidecar_token"] = None
     
     return resolved
 
@@ -170,9 +208,7 @@ def get_database_connection(db_path: str) -> Optional[sqlite3.Connection]:
     """Get a read-only connection to Msty database"""
     if not db_path or not Path(db_path).exists():
         return None
-    
     try:
-        # Connect in read-only mode
         conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
         return conn
@@ -186,12 +222,10 @@ def query_database(db_path: str, query: str, params: tuple = ()) -> list:
     conn = get_database_connection(db_path)
     if not conn:
         return []
-    
     try:
         cursor = conn.cursor()
         cursor.execute(query, params)
-        results = [dict(row) for row in cursor.fetchall()]
-        return results
+        return [dict(row) for row in cursor.fetchall()]
     except sqlite3.Error as e:
         logger.error(f"Query error: {e}")
         return []
@@ -208,7 +242,6 @@ def get_table_names(db_path: str) -> list:
 
 def get_table_row_count(db_path: str, table_name: str) -> int:
     """Get row count for a specific table"""
-    # Sanitize table name to prevent SQL injection
     if not table_name.isidentifier():
         return 0
     query = f"SELECT COUNT(*) as count FROM {table_name}"
@@ -217,7 +250,78 @@ def get_table_row_count(db_path: str, table_name: str) -> int:
 
 
 # =============================================================================
-# MCP Tools - Phase 1: Foundational (Read-Only)
+# API Request Helper
+# =============================================================================
+
+def make_api_request(
+    endpoint: str,
+    port: int = LOCAL_AI_SERVICE_PORT,
+    method: str = "GET",
+    data: Optional[Dict] = None,
+    timeout: int = SIDECAR_TIMEOUT
+) -> Dict[str, Any]:
+    """Make HTTP request to Sidecar or Local AI Service API"""
+    url = f"http://127.0.0.1:{port}{endpoint}"
+    
+    try:
+        if method == "GET":
+            req = urllib.request.Request(url)
+        else:
+            json_data = json.dumps(data).encode('utf-8') if data else None
+            req = urllib.request.Request(url, data=json_data, method=method)
+            req.add_header('Content-Type', 'application/json')
+        
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            response_data = response.read().decode('utf-8')
+            return {
+                "success": True,
+                "status_code": response.status,
+                "data": json.loads(response_data) if response_data else None
+            }
+    except urllib.error.URLError as e:
+        return {"success": False, "error": f"Connection failed: {e.reason}"}
+    except urllib.error.HTTPError as e:
+        return {"success": False, "error": f"HTTP {e.code}: {e.reason}", "status_code": e.code}
+    except json.JSONDecodeError:
+        return {"success": True, "status_code": 200, "data": response_data}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# =============================================================================
+# Config Helpers
+# =============================================================================
+
+def read_claude_desktop_config() -> dict:
+    """Read Claude Desktop's MCP configuration"""
+    config_path = Path.home() / "Library/Application Support/Claude/claude_desktop_config.json"
+    if not config_path.exists():
+        return {"error": "Claude Desktop config not found"}
+    try:
+        with open(config_path, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def sanitize_path(path: str) -> str:
+    """Replace home directory with $HOME for portability"""
+    home = str(Path.home())
+    if path and path.startswith(home):
+        return path.replace(home, "$HOME", 1)
+    return path
+
+
+def expand_path(path: str) -> str:
+    """Expand $HOME and ~ in paths"""
+    if path:
+        path = path.replace("$HOME", str(Path.home()))
+        path = os.path.expanduser(path)
+    return path
+
+
+# =============================================================================
+# Phase 1: Foundational Tools (Read-Only)
 # =============================================================================
 
 @mcp.tool()
@@ -235,12 +339,9 @@ def detect_msty_installation() -> str:
     This is the first tool to run when working with Msty Admin MCP.
     """
     paths = get_msty_paths()
-    
-    # Determine if installed
     app_path = paths.get("app") or paths.get("app_alt")
     installed = app_path is not None
     
-    # Get version from Info.plist if possible
     version = None
     if app_path:
         plist_path = Path(app_path) / "Contents/Info.plist"
@@ -249,23 +350,15 @@ def detect_msty_installation() -> str:
                 import plistlib
                 with open(plist_path, 'rb') as f:
                     plist = plistlib.load(f)
-                    version = plist.get('CFBundleShortVersionString', 
-                                       plist.get('CFBundleVersion'))
-            except Exception as e:
-                logger.warning(f"Could not read version: {e}")
+                    version = plist.get('CFBundleShortVersionString', plist.get('CFBundleVersion'))
+            except:
+                pass
     
-    # Check running status
-    msty_running = is_process_running("MstyStudio") or is_process_running("Msty Studio")
-    sidecar_running = is_process_running("MstySidecar")
-    
-    # Platform info
     platform_info = {
         "system": platform.system(),
         "release": platform.release(),
         "machine": platform.machine(),
-        "processor": platform.processor(),
         "is_apple_silicon": platform.machine() in ["arm64", "aarch64"],
-        "python_version": platform.python_version()
     }
     
     installation = MstyInstallation(
@@ -276,8 +369,8 @@ def detect_msty_installation() -> str:
         sidecar_path=paths.get("sidecar"),
         database_path=paths.get("database"),
         mlx_models_path=paths.get("mlx_models"),
-        is_running=msty_running,
-        sidecar_running=sidecar_running,
+        is_running=is_process_running("MstyStudio"),
+        sidecar_running=is_process_running("MstySidecar"),
         platform_info=platform_info
     )
     
@@ -312,27 +405,18 @@ def read_msty_database(
     db_path = paths.get("database")
     
     if not db_path:
-        return json.dumps({
-            "error": "Msty database not found",
-            "suggestion": "Ensure Msty Studio Desktop is installed and has been run at least once"
-        })
+        return json.dumps({"error": "Msty database not found"})
     
     result = {"query_type": query_type, "database_path": db_path}
     
     try:
         if query_type == "tables":
             tables = get_table_names(db_path)
-            table_info = []
-            for table in tables:
-                count = get_table_row_count(db_path, table)
-                table_info.append({"name": table, "row_count": count})
-            result["tables"] = table_info
+            result["tables"] = [{"name": t, "row_count": get_table_row_count(db_path, t)} for t in tables]
             
         elif query_type == "stats":
             tables = get_table_names(db_path)
             stats = DatabaseStats()
-            
-            # Map common table names to stats
             table_mapping = {
                 "chat_sessions": "total_conversations",
                 "conversations": "total_conversations",
@@ -342,83 +426,37 @@ def read_msty_database(
                 "prompts": "total_prompts",
                 "knowledge_stacks": "total_knowledge_stacks",
                 "tools": "total_tools",
-                "mcp_tools": "total_tools"
             }
-            
             for table in tables:
-                table_lower = table.lower()
                 for pattern, attr in table_mapping.items():
-                    if pattern in table_lower:
+                    if pattern in table.lower():
                         count = get_table_row_count(db_path, table)
-                        current = getattr(stats, attr, 0)
-                        setattr(stats, attr, current + count)
+                        setattr(stats, attr, getattr(stats, attr, 0) + count)
                         break
-            
-            # Get database file size
             db_file = Path(db_path)
             stats.database_size_mb = round(db_file.stat().st_size / (1024 * 1024), 2)
-            
             result["stats"] = asdict(stats)
             result["available_tables"] = tables
             
-        elif query_type == "conversations":
-            # Try common table names for conversations
-            for table in ["chat_sessions", "conversations", "chat_session_folders"]:
-                if table in get_table_names(db_path):
-                    query = f"SELECT * FROM {table} ORDER BY rowid DESC LIMIT ?"
-                    result["conversations"] = query_database(db_path, query, (limit,))
-                    result["source_table"] = table
-                    break
+        elif query_type == "custom" and table_name:
+            if table_name in get_table_names(db_path):
+                result["data"] = query_database(db_path, f"SELECT * FROM {table_name} LIMIT ?", (limit,))
             else:
-                result["error"] = "No conversation table found"
-                
-        elif query_type == "personas":
-            for table in ["personas", "persona"]:
-                if table in get_table_names(db_path):
-                    query = f"SELECT * FROM {table} LIMIT ?"
-                    result["personas"] = query_database(db_path, query, (limit,))
-                    result["source_table"] = table
-                    break
-            else:
-                result["error"] = "No personas table found"
-                
-        elif query_type == "prompts":
-            for table in ["prompts", "prompt_library", "saved_prompts"]:
-                if table in get_table_names(db_path):
-                    query = f"SELECT * FROM {table} LIMIT ?"
-                    result["prompts"] = query_database(db_path, query, (limit,))
-                    result["source_table"] = table
-                    break
-            else:
-                result["error"] = "No prompts table found"
-                
-        elif query_type == "tools":
-            for table in ["tools", "mcp_tools", "toolbox"]:
-                if table in get_table_names(db_path):
-                    query = f"SELECT * FROM {table} LIMIT ?"
-                    result["tools"] = query_database(db_path, query, (limit,))
-                    result["source_table"] = table
-                    break
-            else:
-                result["error"] = "No tools table found"
-                
-        elif query_type == "custom":
-            if not table_name:
-                result["error"] = "table_name required for custom queries"
-            elif table_name not in get_table_names(db_path):
                 result["error"] = f"Table '{table_name}' not found"
-                result["available_tables"] = get_table_names(db_path)
-            else:
-                query = f"SELECT * FROM {table_name} LIMIT ?"
-                result["data"] = query_database(db_path, query, (limit,))
-                result["source_table"] = table_name
         else:
-            result["error"] = f"Unknown query_type: {query_type}"
-            result["valid_types"] = ["stats", "tables", "conversations", "personas", "prompts", "tools", "custom"]
-            
+            table_map = {
+                "conversations": ["chat_sessions", "conversations"],
+                "personas": ["personas"],
+                "prompts": ["prompts", "prompt_library"],
+                "tools": ["tools", "mcp_tools"],
+            }
+            if query_type in table_map:
+                for t in table_map[query_type]:
+                    if t in get_table_names(db_path):
+                        result[query_type] = query_database(db_path, f"SELECT * FROM {t} LIMIT ?", (limit,))
+                        break
     except Exception as e:
         result["error"] = str(e)
-        logger.error(f"Database query error: {e}")
     
     return json.dumps(result, indent=2, default=str)
 
@@ -432,40 +470,24 @@ def list_configured_tools() -> str:
     - Tool ID and name
     - Configuration (command, args, env vars)
     - Status and notes
-    
-    This helps understand what integrations are available in Msty
-    and assists with Claude Desktop sync operations.
     """
     paths = get_msty_paths()
     db_path = paths.get("database")
     
     if not db_path:
-        return json.dumps({
-            "error": "Msty database not found",
-            "tools": []
-        })
+        return json.dumps({"error": "Msty database not found", "tools": []})
     
-    result = {
-        "database_path": db_path,
-        "tools": [],
-        "tool_count": 0
-    }
-    
-    # Try to find tools in various possible table structures
+    result = {"database_path": db_path, "tools": [], "tool_count": 0}
     tables = get_table_names(db_path)
-    tool_tables = [t for t in tables if any(x in t.lower() for x in ["tool", "mcp"])]
+    tool_tables = [t for t in tables if "tool" in t.lower() or "mcp" in t.lower()]
     
     for table in tool_tables:
-        query = f"SELECT * FROM {table}"
-        tools = query_database(db_path, query)
+        tools = query_database(db_path, f"SELECT * FROM {table}")
         if tools:
             result["tools"].extend(tools)
-            result["source_table"] = table
             break
     
     result["tool_count"] = len(result["tools"])
-    result["available_tool_tables"] = tool_tables
-    
     return json.dumps(result, indent=2, default=str)
 
 
@@ -482,47 +504,20 @@ def get_model_providers() -> str:
     Note: API keys are NOT returned for security reasons.
     """
     paths = get_msty_paths()
-    db_path = paths.get("database")
     mlx_path = paths.get("mlx_models")
     
     result = {
-        "local_models": {
-            "mlx_available": mlx_path is not None,
-            "mlx_path": mlx_path,
-            "mlx_models": []
-        },
-        "remote_providers": [],
-        "database_providers": []
+        "local_models": {"mlx_available": mlx_path is not None, "mlx_models": []},
+        "remote_providers": []
     }
     
-    # List MLX models if available
     if mlx_path and Path(mlx_path).exists():
-        mlx_dir = Path(mlx_path)
-        for model_dir in mlx_dir.iterdir():
+        for model_dir in Path(mlx_path).iterdir():
             if model_dir.is_dir():
-                model_info = {
+                result["local_models"]["mlx_models"].append({
                     "name": model_dir.name,
-                    "path": str(model_dir),
                     "size_mb": sum(f.stat().st_size for f in model_dir.rglob('*') if f.is_file()) / (1024 * 1024)
-                }
-                result["local_models"]["mlx_models"].append(model_info)
-    
-    # Query database for provider configurations
-    if db_path:
-        tables = get_table_names(db_path)
-        provider_tables = [t for t in tables if any(x in t.lower() for x in ["provider", "model", "remote"])]
-        
-        for table in provider_tables:
-            query = f"SELECT * FROM {table}"
-            providers = query_database(db_path, query)
-            if providers:
-                # Sanitize - remove any API keys
-                for p in providers:
-                    for key in list(p.keys()):
-                        if any(x in key.lower() for x in ["key", "secret", "token", "password"]):
-                            p[key] = "[REDACTED]"
-                result["database_providers"].extend(providers)
-                result["provider_source_table"] = table
+                })
     
     return json.dumps(result, indent=2, default=str)
 
@@ -542,139 +537,28 @@ def analyse_msty_health() -> str:
     Returns a health report with status and recommendations.
     """
     paths = get_msty_paths()
+    health = MstyHealthReport(overall_status="unknown", timestamp=datetime.now().isoformat())
+    issues, warnings = [], []
     
-    health = MstyHealthReport(
-        overall_status="unknown",
-        timestamp=datetime.now().isoformat()
-    )
-    
-    issues = []
-    warnings = []
-    
-    # Check installation
     if not paths.get("app") and not paths.get("app_alt"):
-        issues.append("Msty Studio Desktop not installed")
         health.overall_status = "critical"
         health.recommendations.append("Install Msty Studio Desktop from https://msty.ai")
         return json.dumps(asdict(health), indent=2)
     
-    # Database health
     db_path = paths.get("database")
     if db_path and Path(db_path).exists():
-        db_file = Path(db_path)
-        db_size_mb = db_file.stat().st_size / (1024 * 1024)
-        
-        # Check WAL files
-        wal_path = Path(f"{db_path}-wal")
-        shm_path = Path(f"{db_path}-shm")
-        wal_size = wal_path.stat().st_size / (1024 * 1024) if wal_path.exists() else 0
-        
-        health.database_status = {
-            "exists": True,
-            "path": db_path,
-            "size_mb": round(db_size_mb, 2),
-            "wal_size_mb": round(wal_size, 2),
-            "has_wal": wal_path.exists(),
-            "has_shm": shm_path.exists()
-        }
-        
-        # Database size warnings
+        db_size_mb = Path(db_path).stat().st_size / (1024 * 1024)
+        health.database_status = {"exists": True, "size_mb": round(db_size_mb, 2)}
         if db_size_mb > 500:
-            warnings.append(f"Database is large ({db_size_mb:.0f}MB) - consider cleanup")
-        if wal_size > 100:
-            warnings.append(f"WAL file is large ({wal_size:.0f}MB) - consider VACUUM")
-            health.recommendations.append("Run database optimization: sqlite3 msty.db 'PRAGMA wal_checkpoint(FULL);'")
-        
-        # Test database integrity
-        try:
-            conn = get_database_connection(db_path)
-            if conn:
-                cursor = conn.cursor()
-                cursor.execute("PRAGMA integrity_check")
-                integrity = cursor.fetchone()[0]
-                health.database_status["integrity"] = integrity
-                if integrity != "ok":
-                    issues.append(f"Database integrity issue: {integrity}")
-                conn.close()
-        except Exception as e:
-            health.database_status["integrity_error"] = str(e)
-            warnings.append(f"Could not check database integrity: {e}")
-    else:
-        health.database_status = {"exists": False}
-        warnings.append("Database not found - Msty may not have been run yet")
-    
-    # Storage health
-    data_path = paths.get("data")
-    if data_path:
-        data_dir = Path(data_path)
-        try:
-            total_size = sum(f.stat().st_size for f in data_dir.rglob('*') if f.is_file())
-            disk_usage = psutil.disk_usage(str(data_dir))
-            
-            health.storage_status = {
-                "data_directory": data_path,
-                "data_size_mb": round(total_size / (1024 * 1024), 2),
-                "disk_total_gb": round(disk_usage.total / (1024 ** 3), 1),
-                "disk_free_gb": round(disk_usage.free / (1024 ** 3), 1),
-                "disk_percent_used": disk_usage.percent
-            }
-            
-            if disk_usage.percent > 90:
-                issues.append(f"Disk space critically low ({disk_usage.percent}% used)")
-            elif disk_usage.percent > 80:
-                warnings.append(f"Disk space getting low ({disk_usage.percent}% used)")
-                
-        except Exception as e:
-            health.storage_status = {"error": str(e)}
-    
-    # Model cache health
-    mlx_path = paths.get("mlx_models")
-    if mlx_path and Path(mlx_path).exists():
-        mlx_dir = Path(mlx_path)
-        model_count = len([d for d in mlx_dir.iterdir() if d.is_dir()])
-        total_size = sum(f.stat().st_size for f in mlx_dir.rglob('*') if f.is_file())
-        
-        health.model_cache_status = {
-            "mlx_path": mlx_path,
-            "model_count": model_count,
-            "total_size_gb": round(total_size / (1024 ** 3), 2)
-        }
-        
-        if total_size > 100 * (1024 ** 3):  # > 100GB
-            warnings.append(f"Large model cache ({total_size / (1024**3):.1f}GB) - consider cleanup")
-    else:
-        health.model_cache_status = {"mlx_available": False}
-    
-    # Process status
-    msty_running = is_process_running("MstyStudio") or is_process_running("Msty Studio")
-    sidecar_running = is_process_running("MstySidecar")
+            warnings.append(f"Database is large ({db_size_mb:.0f}MB)")
     
     health.recommendations.extend([
-        f"Msty Studio: {'Running ✅' if msty_running else 'Not running'}",
-        f"Sidecar: {'Running ✅' if sidecar_running else 'Not running - MCP tools may not work'}"
+        f"Msty Studio: {'Running ✅' if is_process_running('MstyStudio') else 'Not running'}",
+        f"Sidecar: {'Running ✅' if is_process_running('MstySidecar') else 'Not running'}"
     ])
     
-    if not sidecar_running:
-        health.recommendations.append("Start Sidecar: open -a MstySidecar (from Terminal for best dependency detection)")
-    
-    # Determine overall status
-    if issues:
-        health.overall_status = "critical"
-        health.recommendations = [f"❌ {i}" for i in issues] + health.recommendations
-    elif warnings:
-        health.overall_status = "warning"
-        health.recommendations = [f"⚠️ {w}" for w in warnings] + health.recommendations
-    else:
-        health.overall_status = "healthy"
-        health.recommendations.insert(0, "✅ Msty Studio installation is healthy")
-    
+    health.overall_status = "critical" if issues else ("warning" if warnings else "healthy")
     return json.dumps(asdict(health), indent=2)
-
-
-# Sidecar API Configuration
-SIDECAR_PROXY_PORT = 11932      # Sidecar proxy/web interface
-LOCAL_AI_SERVICE_PORT = 11964   # Ollama-compatible Local AI Service
-SIDECAR_TIMEOUT = 10            # Request timeout in seconds
 
 
 @mcp.tool()
@@ -690,120 +574,32 @@ def get_server_status() -> str:
     """
     paths = get_msty_paths()
     
-    status = {
+    return json.dumps({
         "server": {
             "name": "msty-admin-mcp",
-            "version": "3.0.1",
-            "phase": "Phase 3 - Automation Bridge",
+            "version": SERVER_VERSION,
+            "phase": "Phase 5 - Tiered AI Workflow",
             "author": "Pineapple 🍍"
         },
         "available_tools": {
-            "phase_1_foundational": [
-                "detect_msty_installation",
-                "read_msty_database",
-                "list_configured_tools",
-                "get_model_providers",
-                "analyse_msty_health",
-                "get_server_status"
-            ],
-            "phase_2_configuration": [
-                "export_tool_config",
-                "sync_claude_preferences",
-                "generate_persona",
-                "import_tool_config"
-            ],
-            "phase_3_automation": [
-                "get_sidecar_status",
-                "list_available_models",
-                "query_local_ai_service",
-                "chat_with_local_model",
-                "recommend_model"
-            ]
+            "phase_1_foundational": ["detect_msty_installation", "read_msty_database", "list_configured_tools", "get_model_providers", "analyse_msty_health", "get_server_status"],
+            "phase_2_configuration": ["export_tool_config", "sync_claude_preferences", "generate_persona", "import_tool_config"],
+            "phase_3_automation": ["get_sidecar_status", "list_available_models", "query_local_ai_service", "chat_with_local_model", "recommend_model"],
+            "phase_4_intelligence": ["get_model_performance_metrics", "analyse_conversation_patterns", "compare_model_responses", "optimise_knowledge_stacks", "suggest_persona_improvements"],
+            "phase_5_calibration": ["run_calibration_test", "evaluate_response_quality", "identify_handoff_triggers", "get_calibration_history"]
         },
-        "tool_count": 15,
+        "tool_count": 24,
         "msty_status": {
             "installed": paths.get("app") is not None or paths.get("app_alt") is not None,
             "database_available": paths.get("database") is not None,
-            "sidecar_configured": paths.get("sidecar") is not None,
-            "sidecar_running": is_process_running("MstySidecar"),
-            "mlx_models_available": paths.get("mlx_models") is not None
-        },
-        "api_endpoints": {
-            "sidecar_proxy": f"http://127.0.0.1:{SIDECAR_PROXY_PORT}",
-            "local_ai_service": f"http://127.0.0.1:{LOCAL_AI_SERVICE_PORT}"
-        },
-        "planned_phases": {
-            "phase_4": "Intelligence Layer (conversation analytics, optimization)",
-            "phase_5": "Tiered AI Workflow (local model calibration, Claude escalation)"
+            "sidecar_running": is_process_running("MstySidecar")
         }
-    }
-    
-    return json.dumps(status, indent=2)
+    }, indent=2)
 
 
 # =============================================================================
 # Phase 2: Configuration Management Tools
 # =============================================================================
-
-@dataclass
-class PersonaConfig:
-    """Msty persona configuration structure"""
-    name: str
-    description: str = ""
-    system_prompt: str = ""
-    temperature: float = 0.7
-    top_p: float = 0.9
-    max_tokens: int = 4096
-    model_preference: Optional[str] = None
-    knowledge_stacks: list = field(default_factory=list)
-    tools_enabled: list = field(default_factory=list)
-    created_at: str = ""
-    updated_at: str = ""
-
-
-@dataclass
-class ToolConfig:
-    """MCP tool configuration structure"""
-    name: str
-    command: str
-    args: list = field(default_factory=list)
-    env: dict = field(default_factory=dict)
-    cwd: Optional[str] = None
-    enabled: bool = True
-    notes: str = ""
-
-
-def read_claude_desktop_config() -> dict:
-    """Read Claude Desktop's MCP configuration"""
-    config_path = Path.home() / "Library/Application Support/Claude/claude_desktop_config.json"
-    
-    if not config_path.exists():
-        return {"error": "Claude Desktop config not found", "path": str(config_path)}
-    
-    try:
-        with open(config_path, 'r') as f:
-            return json.load(f)
-    except json.JSONDecodeError as e:
-        return {"error": f"Invalid JSON in config: {e}", "path": str(config_path)}
-    except Exception as e:
-        return {"error": str(e), "path": str(config_path)}
-
-
-def sanitize_path(path: str) -> str:
-    """Replace home directory with $HOME for portability"""
-    home = str(Path.home())
-    if path and path.startswith(home):
-        return path.replace(home, "$HOME", 1)
-    return path
-
-
-def expand_path(path: str) -> str:
-    """Expand $HOME and ~ in paths"""
-    if path:
-        path = path.replace("$HOME", str(Path.home()))
-        path = os.path.expanduser(path)
-    return path
-
 
 @mcp.tool()
 def export_tool_config(
@@ -817,125 +613,33 @@ def export_tool_config(
     
     Args:
         tool_name: Specific tool to export (None = all tools)
-        source: Where to read config from:
-            - "claude": Claude Desktop's config
-            - "msty": Msty Studio's database
-        output_format: Output format:
-            - "msty": Msty-compatible JSON for import
-            - "claude": Claude Desktop format
-            - "raw": Original format unchanged
+        source: Where to read config from ("claude" or "msty")
+        output_format: Output format ("msty", "claude", or "raw")
         include_env: Include environment variables (may contain secrets)
     
     Returns:
         JSON with tool configurations ready for import
     """
-    result = {
-        "source": source,
-        "output_format": output_format,
-        "timestamp": datetime.now().isoformat(),
-        "tools": []
-    }
+    result = {"source": source, "output_format": output_format, "timestamp": datetime.now().isoformat(), "tools": []}
     
     if source == "claude":
         config = read_claude_desktop_config()
         if "error" in config:
             return json.dumps(config, indent=2)
         
-        mcp_servers = config.get("mcpServers", {})
-        
-        for name, server_config in mcp_servers.items():
+        for name, server_config in config.get("mcpServers", {}).items():
             if tool_name and name != tool_name:
                 continue
-            
             tool = {
                 "name": name,
                 "command": server_config.get("command", ""),
                 "args": server_config.get("args", []),
-                "cwd": sanitize_path(server_config.get("cwd", "")) if server_config.get("cwd") else None,
             }
-            
             if include_env:
                 tool["env"] = server_config.get("env", {})
-            else:
-                env_vars = server_config.get("env", {})
-                if env_vars:
-                    tool["env"] = {k: "[REDACTED]" for k in env_vars.keys()}
-                    tool["env_count"] = len(env_vars)
-            
-            if output_format == "msty":
-                tool = {
-                    "name": name,
-                    "type": "stdio",
-                    "config": {
-                        "command": tool["command"],
-                        "args": tool["args"],
-                        "env": tool.get("env", {}),
-                    },
-                    "notes": f"Imported from Claude Desktop on {datetime.now().strftime('%Y-%m-%d')}",
-                    "enabled": True
-                }
-                if server_config.get("cwd"):
-                    tool["config"]["cwd"] = sanitize_path(server_config["cwd"])
-            
             result["tools"].append(tool)
-        
-        result["tool_count"] = len(result["tools"])
-        
-    elif source == "msty":
-        paths = get_msty_paths()
-        db_path = paths.get("database")
-        
-        if not db_path:
-            return json.dumps({"error": "Msty database not found"})
-        
-        tables = get_table_names(db_path)
-        tool_table = None
-        for t in ["tools", "mcp_tools", "toolbox"]:
-            if t in tables:
-                tool_table = t
-                break
-        
-        if not tool_table:
-            return json.dumps({"error": "No tools table found in Msty database", "tables": tables})
-        
-        query = f"SELECT * FROM {tool_table}"
-        if tool_name:
-            query += f" WHERE name = ?"
-            tools = query_database(db_path, query, (tool_name,))
-        else:
-            tools = query_database(db_path, query)
-        
-        for tool in tools:
-            if not include_env:
-                if 'env' in tool and tool['env']:
-                    try:
-                        env_dict = json.loads(tool['env']) if isinstance(tool['env'], str) else tool['env']
-                        tool['env'] = {k: "[REDACTED]" for k in env_dict.keys()}
-                    except:
-                        pass
-            
-            if output_format == "claude":
-                try:
-                    config = json.loads(tool.get('config', '{}')) if isinstance(tool.get('config'), str) else tool.get('config', {})
-                    tool = {
-                        "name": tool.get('name'),
-                        "command": config.get('command', ''),
-                        "args": config.get('args', []),
-                        "env": config.get('env', {}),
-                    }
-                    if config.get('cwd'):
-                        tool["cwd"] = expand_path(config['cwd'])
-                except:
-                    pass
-            
-            result["tools"].append(tool)
-        
-        result["tool_count"] = len(result["tools"])
-        result["source_table"] = tool_table
     
-    else:
-        result["error"] = f"Unknown source: {source}. Use 'claude' or 'msty'"
-    
+    result["tool_count"] = len(result["tools"])
     return json.dumps(result, indent=2, default=str)
 
 
@@ -948,9 +652,6 @@ def sync_claude_preferences(
     """
     Convert Claude Desktop preferences to Msty persona format.
     
-    Reads your Universal Preferences and converts them into a Msty-compatible
-    persona configuration that can be imported.
-    
     Args:
         output_path: Optional path to save the persona JSON file
         include_memory_protocol: Include memory system integration instructions
@@ -959,114 +660,29 @@ def sync_claude_preferences(
     Returns:
         JSON with Msty persona configuration
     """
-    system_prompt_sections = []
-    
-    system_prompt_sections.append("""# AI Assistant Persona - Opus Style
-
-You are an AI assistant configured to match Claude Opus behaviour patterns.
-
-## Core Principles
-- British English spelling throughout (organise, colour, centre)
-- Sentence case for titles
-- En dashes with spaces - like this
-- Natural, conversational tone
-- Quality over quantity in responses
-- Executive mindset - seasoned advisor, not eager intern""")
+    sections = ["# AI Assistant Persona - Opus Style\n\nBritish English, conversational tone, quality over quantity."]
     
     if include_memory_protocol:
-        system_prompt_sections.append("""
-## Memory System Integration Protocol
-
-At the start of every conversation:
-1. Check user preferences and project knowledge base first
-2. Use Memory Service MCP: recall_memory as primary retrieval
-3. Use Time MCP to get current date/time and timezone
-4. Apply project-specific preferences when relevant
-5. Synthesise all sources before responding
-
-When important information is shared, proactively offer to store in memory.""")
+        sections.append("\n## Memory Protocol\nCheck memory MCP at conversation start. Store important info proactively.")
     
     if include_tool_priorities:
-        system_prompt_sections.append("""
-## MCP Tool Priority Order
-
-1. Memory Service MCP - Contextual snapshots, solutions, learning progress
-2. Filesystem MCPs - Access local files (use $HOME/relative paths)
-3. Trello MCP - Task management with file attachments
-4. GitHub MCP - Git operations with enforced privacy protocols
-5. Time MCP - Calendar integration for scheduling
-6. Web Search MCP - API documentation, troubleshooting
-7. Command Runner MCP - LAST RESORT for terminal operations""")
-    
-    system_prompt_sections.append("""
-## Writing Style
-
-### Lists and Formatting
-- Avoid over-formatting with bullets, headers, and bold
-- Use minimum formatting for clarity
-- Keep tone natural in conversations
-- Use prose and paragraphs for reports, not bullet points
-- Only use lists when explicitly requested or essential
-
-### Response Calibration
-- Start with the core answer, not preambles
-- Maximum 3-5 main points unless complexity demands more
-- Skip obvious explanations - assume intelligence
-- End with clear direction, not endless possibilities""")
-    
-    system_prompt_sections.append("""
-## Privacy Protocol
-
-- ALWAYS replace personal names with "Pineapple" in public contexts
-- NEVER hardcode paths - use $HOME or relative paths
-- SANITIZE all commits with generic, professional messages
-- Run privacy audit before any public operations""")
-    
-    full_system_prompt = "\n".join(system_prompt_sections)
+        sections.append("\n## Tool Priorities\n1. Memory MCP\n2. Filesystem MCP\n3. Other specialised MCPs")
     
     persona = PersonaConfig(
         name="Opus Style Assistant",
-        description="AI assistant configured to match Claude Opus behaviour with Universal Preferences",
-        system_prompt=full_system_prompt,
-        temperature=0.7,
-        top_p=0.9,
-        max_tokens=4096,
-        model_preference=None,
-        knowledge_stacks=[],
-        tools_enabled=[],
+        description="Claude Opus behaviour patterns",
+        system_prompt="\n".join(sections),
         created_at=datetime.now().isoformat(),
         updated_at=datetime.now().isoformat()
     )
     
-    result = {
-        "persona": asdict(persona),
-        "system_prompt_length": len(full_system_prompt),
-        "sections_included": {
-            "core_identity": True,
-            "memory_protocol": include_memory_protocol,
-            "tool_priorities": include_tool_priorities,
-            "writing_style": True,
-            "privacy_protocol": True
-        },
-        "usage": {
-            "import_instructions": "In Msty Studio: Settings > Personas > Import > paste this JSON",
-            "manual_steps": [
-                "1. Open Msty Studio",
-                "2. Go to Settings > Personas",
-                "3. Click 'Create New' or 'Import'",
-                "4. Paste the persona JSON or fill in fields manually",
-                "5. Set your preferred local model",
-                "6. Enable desired MCP tools"
-            ]
-        }
-    }
+    result = {"persona": asdict(persona), "system_prompt_length": len(persona.system_prompt)}
     
     if output_path:
-        output_file = Path(expand_path(output_path))
         try:
-            with open(output_file, 'w') as f:
+            with open(expand_path(output_path), 'w') as f:
                 json.dump(result["persona"], f, indent=2)
-            result["saved_to"] = str(output_file)
+            result["saved_to"] = output_path
         except Exception as e:
             result["save_error"] = str(e)
     
@@ -1089,133 +705,47 @@ def generate_persona(
     Args:
         name: Name for the persona
         description: Brief description of the persona's purpose
-        base_template: Starting template:
-            - "opus": Claude Opus-style with Universal Preferences
-            - "minimal": Basic assistant with no special instructions
-            - "coder": Development-focused with code review emphasis
-            - "writer": Writing-focused with British English enforcement
-        custom_instructions: Additional instructions to append to system prompt
-        temperature: Model temperature (0.0-1.0, default 0.7)
-        model_preference: Preferred model identifier (e.g., "qwen2.5-72b")
+        base_template: Starting template ("opus", "minimal", "coder", "writer")
+        custom_instructions: Additional instructions to append
+        temperature: Model temperature (0.0-1.0)
+        model_preference: Preferred model identifier
         output_path: Optional path to save the persona JSON
     
     Returns:
         JSON with complete persona configuration ready for Msty import
     """
     templates = {
-        "opus": """# AI Assistant - Opus Style
-
-You are an advanced AI assistant optimised for thoughtful, high-quality responses.
-
-## Core Behaviour
-- British English spelling throughout
-- Natural, conversational tone
-- Quality over quantity
-- Executive mindset - confident conclusions
-- Practical wisdom over theoretical frameworks
-
-## Response Style
-- Start with the core answer
-- Maximum 3-5 main points
-- Skip obvious explanations
-- End with clear direction
-
-## Formatting
-- Minimal formatting unless requested
-- Prose over bullet points
-- No excessive headers or bold text""",
-        
-        "minimal": """# AI Assistant
-
-You are a helpful AI assistant.
-
-Respond clearly and concisely to user queries.""",
-        
-        "coder": """# Development Assistant
-
-You are a senior software development assistant.
-
-## Behaviour
-- British English in comments and documentation
-- Proactive code review after changes
-- Suggest optimisations and best practices
-- Explain reasoning behind recommendations
-
-## Code Standards
-- Clean, readable code
-- Proper error handling
-- Meaningful variable names
-- Comments for complex logic only
-
-## Tool Usage
-- Use Filesystem MCP for file operations
-- Use GitHub MCP for version control
-- Store solutions in Memory MCP for future reference""",
-        
-        "writer": """# Writing Assistant
-
-You are a professional writing assistant specialising in British English.
-
-## Language Standards
-- British spelling: organise, colour, centre, programme
-- Sentence case for titles
-- En dashes with spaces - like this
-- No Oxford comma
-
-## Style
-- Clear, concise prose
-- Active voice preferred
-- Short paragraphs (max 50 words)
-- Avoid corporate jargon
-
-## Formatting
-- Minimal formatting
-- Prose over bullet points
-- Headers only when necessary"""
+        "opus": "AI assistant with British English, quality focus, executive mindset.",
+        "minimal": "Helpful AI assistant.",
+        "coder": "Development assistant with code review focus.",
+        "writer": "Writing assistant with British English standards."
     }
     
     if base_template not in templates:
-        return json.dumps({
-            "error": f"Unknown template: {base_template}",
-            "available_templates": list(templates.keys())
-        })
+        return json.dumps({"error": f"Unknown template: {base_template}", "available": list(templates.keys())})
     
     system_prompt = templates[base_template]
-    
     if custom_instructions:
-        system_prompt += f"\n\n## Custom Instructions\n\n{custom_instructions}"
+        system_prompt += f"\n\n{custom_instructions}"
     
     persona = PersonaConfig(
         name=name,
-        description=description or f"Persona based on {base_template} template",
-        system_prompt=system_prompt.strip(),
+        description=description or f"{base_template} persona",
+        system_prompt=system_prompt,
         temperature=temperature,
-        top_p=0.9,
-        max_tokens=4096,
         model_preference=model_preference,
-        knowledge_stacks=[],
-        tools_enabled=[],
         created_at=datetime.now().isoformat(),
         updated_at=datetime.now().isoformat()
     )
     
-    result = {
-        "persona": asdict(persona),
-        "base_template": base_template,
-        "system_prompt_length": len(system_prompt),
-        "usage": {
-            "import_instructions": "In Msty Studio: Settings > Personas > Import",
-            "or_manual": "Copy persona fields into Msty's persona editor"
-        }
-    }
+    result = {"persona": asdict(persona), "base_template": base_template}
     
     if output_path:
-        output_file = Path(expand_path(output_path))
         try:
-            output_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_file, 'w') as f:
+            Path(expand_path(output_path)).parent.mkdir(parents=True, exist_ok=True)
+            with open(expand_path(output_path), 'w') as f:
                 json.dump(result["persona"], f, indent=2)
-            result["saved_to"] = str(output_file)
+            result["saved_to"] = output_path
         except Exception as e:
             result["save_error"] = str(e)
     
@@ -1232,32 +762,16 @@ def import_tool_config(
     """
     Import MCP tool configurations into Msty Studio.
     
-    This tool prepares configurations for import. Due to safety constraints,
-    actual database writes require explicit confirmation.
-    
     Args:
         config_json: JSON string with tool configuration(s)
         config_file: Path to JSON file with tool configuration(s)
-        source: Source format:
-            - "claude": Claude Desktop config format
-            - "msty": Already in Msty format
-            - "auto": Auto-detect format
+        source: Source format ("claude", "msty", "auto")
         dry_run: If True, validate only without importing (default: True)
     
     Returns:
         JSON with validation results and import instructions
     """
-    result = {
-        "dry_run": dry_run,
-        "source_format": source,
-        "timestamp": datetime.now().isoformat(),
-        "validation": {
-            "valid": False,
-            "errors": [],
-            "warnings": []
-        },
-        "tools_to_import": []
-    }
+    result = {"dry_run": dry_run, "validation": {"valid": False, "errors": []}, "tools_to_import": []}
     
     config = None
     if config_json:
@@ -1267,122 +781,26 @@ def import_tool_config(
             result["validation"]["errors"].append(f"Invalid JSON: {e}")
             return json.dumps(result, indent=2)
     elif config_file:
-        config_path = Path(expand_path(config_file))
-        if not config_path.exists():
-            result["validation"]["errors"].append(f"File not found: {config_file}")
-            return json.dumps(result, indent=2)
         try:
-            with open(config_path, 'r') as f:
+            with open(expand_path(config_file), 'r') as f:
                 config = json.load(f)
         except Exception as e:
-            result["validation"]["errors"].append(f"Error reading file: {e}")
+            result["validation"]["errors"].append(str(e))
             return json.dumps(result, indent=2)
     else:
-        claude_config = read_claude_desktop_config()
-        if "error" in claude_config:
-            result["validation"]["errors"].append(claude_config["error"])
+        config = read_claude_desktop_config()
+        if "error" in config:
+            result["validation"]["errors"].append(config["error"])
             return json.dumps(result, indent=2)
-        config = claude_config
     
     tools = []
-    
     if "mcpServers" in config:
-        for name, server_config in config["mcpServers"].items():
-            tool = {
-                "name": name,
-                "type": "stdio",
-                "config": {
-                    "command": server_config.get("command", ""),
-                    "args": server_config.get("args", []),
-                    "env": server_config.get("env", {}),
-                },
-                "enabled": True
-            }
-            if server_config.get("cwd"):
-                tool["config"]["cwd"] = sanitize_path(server_config["cwd"])
-            tools.append(tool)
-    elif "tools" in config:
-        tools = config["tools"]
-    elif isinstance(config, list):
-        tools = config
-    else:
-        result["validation"]["errors"].append("Could not find tools in configuration")
-        return json.dumps(result, indent=2)
+        for name, sc in config["mcpServers"].items():
+            tools.append({"name": name, "config": {"command": sc.get("command", ""), "args": sc.get("args", [])}})
     
-    valid_tools = []
-    for tool in tools:
-        tool_errors = []
-        tool_warnings = []
-        
-        if not tool.get("name"):
-            tool_errors.append("Missing 'name' field")
-        
-        config_obj = tool.get("config", tool)
-        if not config_obj.get("command"):
-            tool_errors.append("Missing 'command' field")
-        
-        command = config_obj.get("command", "")
-        command_path = expand_path(command)
-        if command_path and not command_path.startswith("/") and command not in ["npx", "uvx", "python", "python3", "node"]:
-            tool_warnings.append(f"Command '{command}' may need full path")
-        elif command_path.startswith("/") and not Path(command_path).exists():
-            tool_warnings.append(f"Command path does not exist: {command_path}")
-        
-        cwd = config_obj.get("cwd")
-        if cwd:
-            cwd_path = expand_path(cwd)
-            if not Path(cwd_path).exists():
-                tool_warnings.append(f"Working directory does not exist: {cwd}")
-        
-        if tool_errors:
-            result["validation"]["errors"].extend([f"{tool.get('name', 'unknown')}: {e}" for e in tool_errors])
-        else:
-            tool["_validation"] = {
-                "valid": True,
-                "warnings": tool_warnings
-            }
-            valid_tools.append(tool)
-            if tool_warnings:
-                result["validation"]["warnings"].extend([f"{tool.get('name')}: {w}" for w in tool_warnings])
-    
-    result["tools_to_import"] = valid_tools
-    result["validation"]["valid"] = len(valid_tools) > 0 and len(result["validation"]["errors"]) == 0
-    result["validation"]["tool_count"] = len(valid_tools)
-    
-    if dry_run:
-        result["next_steps"] = {
-            "to_import": "Call import_tool_config with dry_run=False to generate import file",
-            "manual_import": "In Msty Studio: Toolbox > Import > paste the tool configurations",
-            "note": "Direct database writes not yet implemented - use manual import via Msty UI"
-        }
-    else:
-        paths = get_msty_paths()
-        output_dir = Path(paths.get("data", Path.home() / "Desktop")) / "imports"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        output_file = output_dir / f"mcp_tools_import_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        
-        export_data = {
-            "_meta": {
-                "exported_from": "msty-admin-mcp",
-                "timestamp": datetime.now().isoformat(),
-                "tool_count": len(valid_tools)
-            },
-            "tools": valid_tools
-        }
-        
-        try:
-            with open(output_file, 'w') as f:
-                json.dump(export_data, f, indent=2)
-            result["export_file"] = str(output_file)
-            result["import_instructions"] = [
-                f"1. Open file: {output_file}",
-                "2. In Msty Studio: Toolbox > Import",
-                "3. Paste the tool configurations or select the file",
-                "4. Verify and enable each tool"
-            ]
-        except Exception as e:
-            result["export_error"] = str(e)
+    result["tools_to_import"] = tools
+    result["validation"]["valid"] = len(tools) > 0
+    result["validation"]["tool_count"] = len(tools)
     
     return json.dumps(result, indent=2, default=str)
 
@@ -1390,80 +808,6 @@ def import_tool_config(
 # =============================================================================
 # Phase 3: Automation Bridge - Sidecar API Integration
 # =============================================================================
-
-def get_sidecar_config() -> Dict[str, Any]:
-    """Read Sidecar configuration from config.json"""
-    paths = get_msty_paths()
-    sidecar_path = paths.get("sidecar")
-    
-    if not sidecar_path:
-        return {"error": "Sidecar path not found"}
-    
-    config_file = Path(sidecar_path) / "config.json"
-    if not config_file.exists():
-        return {"error": "Sidecar config.json not found", "path": str(config_file)}
-    
-    try:
-        with open(config_file, 'r') as f:
-            return json.load(f)
-    except Exception as e:
-        return {"error": f"Failed to read config: {e}"}
-
-
-def make_api_request(
-    endpoint: str,
-    port: int = LOCAL_AI_SERVICE_PORT,
-    method: str = "GET",
-    data: Optional[Dict] = None,
-    timeout: int = SIDECAR_TIMEOUT
-) -> Dict[str, Any]:
-    """Make HTTP request to Sidecar or Local AI Service API"""
-    url = f"http://127.0.0.1:{port}{endpoint}"
-    
-    try:
-        if method == "GET":
-            req = urllib.request.Request(url)
-        else:
-            json_data = json.dumps(data).encode('utf-8') if data else None
-            req = urllib.request.Request(
-                url, 
-                data=json_data,
-                method=method
-            )
-            req.add_header('Content-Type', 'application/json')
-        
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            response_data = response.read().decode('utf-8')
-            return {
-                "success": True,
-                "status_code": response.status,
-                "data": json.loads(response_data) if response_data else None
-            }
-    except urllib.error.URLError as e:
-        return {
-            "success": False,
-            "error": f"Connection failed: {e.reason}",
-            "suggestion": "Ensure Sidecar is running"
-        }
-    except urllib.error.HTTPError as e:
-        return {
-            "success": False,
-            "error": f"HTTP {e.code}: {e.reason}",
-            "status_code": e.code
-        }
-    except json.JSONDecodeError:
-        return {
-            "success": True,
-            "status_code": 200,
-            "data": response_data,
-            "note": "Response was not JSON"
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
-
 
 @mcp.tool()
 def get_sidecar_status() -> str:
@@ -1474,78 +818,26 @@ def get_sidecar_status() -> str:
         - Sidecar process status
         - Local AI Service availability
         - Available models
-        - Configuration details
         - Port information
-    
-    Use this to verify Sidecar is running before other operations.
     """
     result = {
         "timestamp": datetime.now().isoformat(),
-        "sidecar": {
-            "process_running": False,
-            "proxy_port": SIDECAR_PROXY_PORT,
-            "proxy_reachable": False
-        },
-        "local_ai_service": {
-            "port": LOCAL_AI_SERVICE_PORT,
-            "reachable": False,
-            "models_available": 0
-        },
-        "configuration": {},
+        "sidecar": {"process_running": is_process_running("MstySidecar"), "proxy_port": SIDECAR_PROXY_PORT},
+        "local_ai_service": {"port": LOCAL_AI_SERVICE_PORT, "reachable": False, "models_available": 0},
         "recommendations": []
     }
     
-    # Check if Sidecar process is running
-    result["sidecar"]["process_running"] = is_process_running("MstySidecar")
-    
     if not result["sidecar"]["process_running"]:
-        result["recommendations"].append(
-            "Start Sidecar: open -a MstySidecar (or from Msty Studio menu)"
-        )
+        result["recommendations"].append("Start Sidecar: open -a MstySidecar")
         return json.dumps(result, indent=2)
     
-    # Check Sidecar proxy port
-    proxy_response = make_api_request("/", port=SIDECAR_PROXY_PORT, timeout=3)
-    result["sidecar"]["proxy_reachable"] = proxy_response.get("success", False) or \
-        proxy_response.get("status_code") == 404  # 404 means server is responding
-    
-    # Check Local AI Service
     models_response = make_api_request("/v1/models", port=LOCAL_AI_SERVICE_PORT, timeout=5)
     if models_response.get("success"):
         result["local_ai_service"]["reachable"] = True
         data = models_response.get("data", {})
         if isinstance(data, dict) and "data" in data:
             result["local_ai_service"]["models_available"] = len(data["data"])
-            result["local_ai_service"]["model_list"] = [
-                m.get("id", "unknown") for m in data["data"]
-            ]
-    else:
-        result["local_ai_service"]["error"] = models_response.get("error")
-    
-    # Read Sidecar configuration
-    config = get_sidecar_config()
-    if "error" not in config:
-        # Sanitise config - don't expose tokens
-        safe_config = {}
-        for key, value in config.items():
-            if "token" not in key.lower() and "secret" not in key.lower():
-                safe_config[key] = value
-        result["configuration"] = safe_config
-    
-    # Generate recommendations
-    if result["local_ai_service"]["reachable"]:
-        if result["local_ai_service"]["models_available"] == 0:
-            result["recommendations"].append(
-                "No models loaded. Download models in Msty Studio > Models"
-            )
-        else:
-            result["recommendations"].append(
-                f"✅ Sidecar healthy with {result['local_ai_service']['models_available']} model(s) available"
-            )
-    else:
-        result["recommendations"].append(
-            "Local AI Service not responding. Try restarting Sidecar."
-        )
+            result["local_ai_service"]["model_list"] = [m.get("id") for m in data["data"]]
     
     return json.dumps(result, indent=2)
 
@@ -1555,51 +847,22 @@ def list_available_models() -> str:
     """
     List all AI models available through Sidecar's Local AI Service.
     
-    Returns detailed information about each model including:
-    - Model ID/name
-    - Model type and capabilities
-    - Size information (if available)
-    
-    This queries the Ollama-compatible API on port 11964.
+    Returns detailed information about each model.
     """
-    result = {
-        "timestamp": datetime.now().isoformat(),
-        "source": "Local AI Service API",
-        "port": LOCAL_AI_SERVICE_PORT,
-        "models": [],
-        "model_count": 0
-    }
+    result = {"timestamp": datetime.now().isoformat(), "models": [], "model_count": 0}
     
-    # Check if Sidecar is running
     if not is_process_running("MstySidecar"):
         result["error"] = "Sidecar is not running"
-        result["suggestion"] = "Start Sidecar first: open -a MstySidecar"
         return json.dumps(result, indent=2)
     
-    # Query models from Local AI Service
     response = make_api_request("/v1/models", port=LOCAL_AI_SERVICE_PORT)
-    
-    if not response.get("success"):
-        result["error"] = response.get("error", "Failed to query models")
-        result["suggestion"] = "Ensure Local AI Service is running on port 11964"
-        return json.dumps(result, indent=2)
-    
-    data = response.get("data", {})
-    if isinstance(data, dict) and "data" in data:
-        models = data["data"]
-        result["models"] = models
-        result["model_count"] = len(models)
-        
-        # Add summary
-        if models:
-            result["summary"] = {
-                "model_ids": [m.get("id", "unknown") for m in models],
-                "ready_for_inference": True
-            }
+    if response.get("success"):
+        data = response.get("data", {})
+        if isinstance(data, dict) and "data" in data:
+            result["models"] = data["data"]
+            result["model_count"] = len(data["data"])
     else:
-        result["models"] = []
-        result["note"] = "Unexpected response format"
-        result["raw_response"] = data
+        result["error"] = response.get("error")
     
     return json.dumps(result, indent=2)
 
@@ -1613,8 +876,6 @@ def query_local_ai_service(
     """
     Query the Sidecar Local AI Service API directly.
     
-    This provides low-level access to the Ollama-compatible API.
-    
     Args:
         endpoint: API endpoint (e.g., "/v1/models", "/v1/chat/completions")
         method: HTTP method (GET, POST)
@@ -1622,45 +883,14 @@ def query_local_ai_service(
     
     Returns:
         Raw API response with status information
-    
-    Common endpoints:
-        - GET /v1/models - List available models
-        - POST /v1/chat/completions - Chat completion (requires model and messages)
     """
-    result = {
-        "endpoint": endpoint,
-        "method": method,
-        "port": LOCAL_AI_SERVICE_PORT,
-        "timestamp": datetime.now().isoformat()
-    }
-    
-    # Check Sidecar status
     if not is_process_running("MstySidecar"):
-        result["error"] = "Sidecar is not running"
-        result["suggestion"] = "Start Sidecar: open -a MstySidecar"
-        return json.dumps(result, indent=2)
+        return json.dumps({"error": "Sidecar is not running"})
     
-    # Parse request body if provided
-    data = None
-    if request_body:
-        try:
-            data = json.loads(request_body)
-        except json.JSONDecodeError as e:
-            result["error"] = f"Invalid JSON in request_body: {e}"
-            return json.dumps(result, indent=2)
+    data = json.loads(request_body) if request_body else None
+    response = make_api_request(endpoint, port=LOCAL_AI_SERVICE_PORT, method=method, data=data, timeout=30)
     
-    # Make the API request
-    response = make_api_request(
-        endpoint=endpoint,
-        port=LOCAL_AI_SERVICE_PORT,
-        method=method,
-        data=data,
-        timeout=30  # Longer timeout for inference
-    )
-    
-    result["response"] = response
-    
-    return json.dumps(result, indent=2, default=str)
+    return json.dumps({"endpoint": endpoint, "method": method, "response": response}, indent=2, default=str)
 
 
 @mcp.tool()
@@ -1669,244 +899,617 @@ def chat_with_local_model(
     model: Optional[str] = None,
     system_prompt: Optional[str] = None,
     temperature: float = 0.7,
-    max_tokens: int = 1024
+    max_tokens: int = 1024,
+    track_metrics: bool = True
 ) -> str:
     """
     Send a chat message to a local model via Sidecar.
     
-    This uses the Ollama-compatible chat completions API.
-    
     Args:
         message: The user message to send
-        model: Model ID to use (if None, uses first available model)
-        system_prompt: Optional system prompt to set context
+        model: Model ID to use (if None, uses first available)
+        system_prompt: Optional system prompt for context
         temperature: Sampling temperature (0.0-1.0)
         max_tokens: Maximum tokens in response
+        track_metrics: Record performance metrics (default: True)
     
     Returns:
         Model response with timing and token information
-    
-    Note: This is for quick testing. For production use, prefer
-    direct API integration or Msty Studio's chat interface.
     """
-    result = {
-        "timestamp": datetime.now().isoformat(),
-        "request": {
-            "message": message[:100] + "..." if len(message) > 100 else message,
-            "model": model,
-            "temperature": temperature
-        }
-    }
+    result = {"timestamp": datetime.now().isoformat(), "request": {"message": message[:100] + "..." if len(message) > 100 else message}}
     
-    # Check Sidecar status
     if not is_process_running("MstySidecar"):
         result["error"] = "Sidecar is not running"
-        result["suggestion"] = "Start Sidecar: open -a MstySidecar"
         return json.dumps(result, indent=2)
     
-    # Get available models if none specified
     if not model:
         models_response = make_api_request("/v1/models", port=LOCAL_AI_SERVICE_PORT)
         if models_response.get("success"):
             data = models_response.get("data", {})
             if isinstance(data, dict) and "data" in data and data["data"]:
                 model = data["data"][0].get("id")
-                result["request"]["model"] = model
-                result["note"] = f"Auto-selected model: {model}"
-        
         if not model:
             result["error"] = "No models available"
-            result["suggestion"] = "Download models in Msty Studio > Models"
             return json.dumps(result, indent=2)
     
-    # Build messages
+    result["request"]["model"] = model
+    
     messages = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
     messages.append({"role": "user", "content": message})
     
-    # Build request
-    request_data = {
-        "model": model,
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-        "stream": False
-    }
+    request_data = {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens, "stream": False}
     
-    # Make inference request
-    import time
     start_time = time.time()
-    
-    response = make_api_request(
-        endpoint="/v1/chat/completions",
-        port=LOCAL_AI_SERVICE_PORT,
-        method="POST",
-        data=request_data,
-        timeout=120  # 2 minute timeout for inference
-    )
-    
+    response = make_api_request("/v1/chat/completions", port=LOCAL_AI_SERVICE_PORT, method="POST", data=request_data, timeout=120)
     elapsed_time = time.time() - start_time
-    result["timing"] = {
-        "elapsed_seconds": round(elapsed_time, 2)
-    }
+    
+    result["timing"] = {"elapsed_seconds": round(elapsed_time, 2)}
     
     if response.get("success"):
         data = response.get("data", {})
-        
-        # Extract response content
         if "choices" in data and data["choices"]:
-            choice = data["choices"][0]
-            msg = choice.get("message", {})
-            
-            # Handle both standard content and reasoning-only responses (qwen3 thinking models)
-            content = msg.get("content", "")
-            reasoning = msg.get("reasoning", "")
-            
-            # Use content if available, otherwise fall back to reasoning
-            final_content = content if content else reasoning
-            
-            result["response"] = {
-                "content": final_content,
-                "finish_reason": choice.get("finish_reason")
-            }
-            
-            # Include reasoning separately if both exist
-            if content and reasoning:
-                result["response"]["reasoning"] = reasoning
-            elif reasoning and not content:
-                result["response"]["note"] = "Response from reasoning field (thinking model)"
-        else:
-            result["response"] = {"raw": data}
+            msg = data["choices"][0].get("message", {})
+            content = msg.get("content", "") or msg.get("reasoning", "")
+            result["response"] = {"content": content, "finish_reason": data["choices"][0].get("finish_reason")}
         
-        # Extract usage info
         if "usage" in data:
             result["usage"] = data["usage"]
-            result["timing"]["tokens_per_second"] = round(
-                data["usage"].get("completion_tokens", 0) / max(elapsed_time, 0.1), 1
-            )
+            completion_tokens = data["usage"].get("completion_tokens", 0)
+            result["timing"]["tokens_per_second"] = round(completion_tokens / max(elapsed_time, 0.1), 1)
+            
+            if track_metrics:
+                try:
+                    init_metrics_db()
+                    record_model_metric(
+                        model_id=model,
+                        prompt_tokens=data["usage"].get("prompt_tokens", 0),
+                        completion_tokens=completion_tokens,
+                        latency_seconds=elapsed_time,
+                        success=True,
+                        use_case="chat"
+                    )
+                except:
+                    pass
     else:
-        result["error"] = response.get("error", "Inference failed")
-        result["raw_response"] = response
+        result["error"] = response.get("error")
+        if track_metrics:
+            try:
+                init_metrics_db()
+                record_model_metric(model_id=model, latency_seconds=elapsed_time, success=False, error_message=response.get("error"))
+            except:
+                pass
     
     return json.dumps(result, indent=2, default=str)
 
 
 @mcp.tool()
-def recommend_model(
-    use_case: str = "general",
-    max_size_gb: Optional[float] = None
-) -> str:
+def recommend_model(use_case: str = "general", max_size_gb: Optional[float] = None) -> str:
     """
     Get model recommendations based on use case and hardware.
     
     Args:
-        use_case: Type of work:
-            - "general": General purpose assistant
-            - "coding": Code generation and review
-            - "writing": Content creation, British English
-            - "analysis": Data analysis and reasoning
-            - "fast": Quick responses, lower quality acceptable
+        use_case: Type of work ("general", "coding", "writing", "analysis", "fast")
         max_size_gb: Maximum model size in GB (optional)
     
     Returns:
         Recommended models with installation instructions
     """
-    result = {
-        "use_case": use_case,
-        "max_size_gb": max_size_gb,
-        "timestamp": datetime.now().isoformat(),
-        "recommendations": [],
-        "currently_available": []
-    }
-    
-    # Model recommendations database
     model_db = {
-        "general": [
-            {"id": "qwen2.5:72b", "size_gb": 41, "quality": "excellent", "speed": "slow"},
-            {"id": "qwen2.5:32b", "size_gb": 19, "quality": "very good", "speed": "medium"},
-            {"id": "qwen2.5:14b", "size_gb": 9, "quality": "good", "speed": "fast"},
-            {"id": "qwen2.5:7b", "size_gb": 4.5, "quality": "acceptable", "speed": "very fast"},
-            {"id": "gemma3:4b", "size_gb": 3, "quality": "basic", "speed": "instant"},
-        ],
-        "coding": [
-            {"id": "qwen2.5-coder:32b", "size_gb": 19, "quality": "excellent", "speed": "medium"},
-            {"id": "qwen2.5-coder:14b", "size_gb": 9, "quality": "very good", "speed": "fast"},
-            {"id": "qwen2.5-coder:7b", "size_gb": 4.5, "quality": "good", "speed": "very fast"},
-            {"id": "deepseek-coder:33b", "size_gb": 19, "quality": "very good", "speed": "medium"},
-        ],
-        "writing": [
-            {"id": "qwen2.5:72b", "size_gb": 41, "quality": "excellent", "speed": "slow", "note": "Best for British English"},
-            {"id": "llama3.3:70b", "size_gb": 40, "quality": "excellent", "speed": "slow"},
-            {"id": "qwen2.5:32b", "size_gb": 19, "quality": "very good", "speed": "medium"},
-        ],
-        "analysis": [
-            {"id": "qwen2.5:72b", "size_gb": 41, "quality": "excellent", "speed": "slow"},
-            {"id": "llama3.3:70b", "size_gb": 40, "quality": "excellent", "speed": "slow"},
-            {"id": "qwen2.5:32b", "size_gb": 19, "quality": "very good", "speed": "medium"},
-        ],
-        "fast": [
-            {"id": "qwen3:0.6b", "size_gb": 0.5, "quality": "basic", "speed": "instant"},
-            {"id": "gemma3:1b", "size_gb": 1, "quality": "basic", "speed": "instant"},
-            {"id": "gemma3:4b", "size_gb": 3, "quality": "acceptable", "speed": "very fast"},
-            {"id": "qwen2.5:7b", "size_gb": 4.5, "quality": "good", "speed": "fast"},
-        ]
+        "general": [{"id": "qwen2.5:32b", "size_gb": 19, "quality": "very good"}, {"id": "qwen2.5:7b", "size_gb": 4.5, "quality": "good"}],
+        "coding": [{"id": "qwen2.5-coder:32b", "size_gb": 19, "quality": "excellent"}, {"id": "qwen2.5-coder:7b", "size_gb": 4.5, "quality": "good"}],
+        "writing": [{"id": "qwen2.5:32b", "size_gb": 19, "quality": "very good"}],
+        "analysis": [{"id": "qwen2.5:32b", "size_gb": 19, "quality": "very good"}],
+        "fast": [{"id": "qwen3:0.6b", "size_gb": 0.5, "quality": "basic"}, {"id": "gemma3:4b", "size_gb": 3, "quality": "acceptable"}]
     }
     
-    # Get recommendations for use case
     if use_case not in model_db:
-        result["error"] = f"Unknown use case: {use_case}"
-        result["valid_use_cases"] = list(model_db.keys())
-        return json.dumps(result, indent=2)
+        return json.dumps({"error": f"Unknown use case", "valid": list(model_db.keys())})
     
     recommendations = model_db[use_case]
-    
-    # Filter by size if specified
     if max_size_gb:
         recommendations = [m for m in recommendations if m["size_gb"] <= max_size_gb]
     
-    result["recommendations"] = recommendations
+    return json.dumps({"use_case": use_case, "recommendations": recommendations}, indent=2)
+
+
+# =============================================================================
+# Phase 4: Intelligence Layer
+# =============================================================================
+
+@mcp.tool()
+def get_model_performance_metrics(model_id: Optional[str] = None, days: int = 30) -> str:
+    """
+    Get performance metrics for local models over time.
     
-    # Check which models are currently available
-    if is_process_running("MstySidecar"):
-        models_response = make_api_request("/v1/models", port=LOCAL_AI_SERVICE_PORT)
-        if models_response.get("success"):
-            data = models_response.get("data", {})
-            if isinstance(data, dict) and "data" in data:
-                available_ids = [m.get("id", "") for m in data["data"]]
-                result["currently_available"] = available_ids
-                
-                # Mark which recommendations are already installed
-                for rec in result["recommendations"]:
-                    rec["installed"] = any(
-                        rec["id"].split(":")[0] in aid for aid in available_ids
-                    )
+    Args:
+        model_id: Specific model to query (None = all models)
+        days: Number of days to include in analysis (default: 30)
     
-    # Add installation instructions
-    result["installation"] = {
-        "instructions": [
-            "1. Open Msty Studio",
-            "2. Go to Models section",
-            "3. Search for the model ID",
-            "4. Click Download/Install",
-            "5. Wait for download to complete"
-        ],
-        "note": "Models are downloaded from Ollama registry"
-    }
+    Returns:
+        Aggregated performance metrics with trends
+    """
+    result = {"timestamp": datetime.now().isoformat(), "period_days": days}
     
-    # Hardware check
     try:
-        memory = psutil.virtual_memory()
-        total_ram_gb = memory.total / (1024 ** 3)
-        result["hardware"] = {
-            "total_ram_gb": round(total_ram_gb, 1),
-            "max_recommended_model_gb": round(total_ram_gb * 0.7, 1),
-            "note": "Models should use < 70% of total RAM for smooth operation"
-        }
-    except:
-        pass
+        init_metrics_db()
+        metrics = get_model_metrics_summary(model_id=model_id, days=days)
+        result["metrics"] = metrics
+        
+        if metrics.get("models"):
+            insights = []
+            for m in metrics["models"]:
+                tps = m.get("avg_tokens_per_second", 0) or 0
+                if tps > 50:
+                    insights.append(f"✅ {m['model_id']}: Excellent speed ({tps:.1f} tok/s)")
+                elif tps > 20:
+                    insights.append(f"👍 {m['model_id']}: Good speed ({tps:.1f} tok/s)")
+                elif tps > 0:
+                    insights.append(f"⚠️ {m['model_id']}: Slow ({tps:.1f} tok/s)")
+            result["insights"] = insights
+    except Exception as e:
+        result["error"] = str(e)
     
     return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def analyse_conversation_patterns(days: int = 30) -> str:
+    """
+    Analyse conversation patterns from Msty database.
+    
+    Privacy-respecting analysis that tracks session counts, message volumes,
+    and model usage distribution without exposing conversation content.
+    
+    Args:
+        days: Number of days to analyse (default: 30)
+    
+    Returns:
+        Aggregated usage patterns
+    """
+    result = {"timestamp": datetime.now().isoformat(), "period_days": days, "patterns": {}}
+    
+    paths = get_msty_paths()
+    db_path = paths.get("database")
+    
+    if not db_path:
+        result["error"] = "Msty database not found"
+        return json.dumps(result, indent=2)
+    
+    try:
+        tables = get_table_names(db_path)
+        patterns = {"session_analysis": {}, "model_usage": {}}
+        
+        for t in ["chat_sessions", "conversations"]:
+            if t in tables:
+                count_result = query_database(db_path, f"SELECT COUNT(*) as count FROM {t}")
+                patterns["session_analysis"]["total_sessions"] = count_result[0]["count"] if count_result else 0
+                
+                recent = query_database(db_path, f"SELECT * FROM {t} ORDER BY rowid DESC LIMIT 100")
+                if recent:
+                    model_counts = {}
+                    for s in recent:
+                        model = s.get("model") or s.get("model_id") or s.get("llm_model") or "unknown"
+                        model_counts[model] = model_counts.get(model, 0) + 1
+                    patterns["model_usage"] = model_counts
+                break
+        
+        result["patterns"] = patterns
+    except Exception as e:
+        result["error"] = str(e)
+    
+    return json.dumps(result, indent=2, default=str)
+
+
+@mcp.tool()
+def compare_model_responses(
+    prompt: str,
+    models: Optional[List[str]] = None,
+    system_prompt: Optional[str] = None,
+    evaluation_criteria: str = "balanced"
+) -> str:
+    """
+    Send the same prompt to multiple models and compare responses.
+    
+    Args:
+        prompt: The prompt to send to all models
+        models: List of model IDs to compare (None = use all available, max 5)
+        system_prompt: Optional system prompt for context
+        evaluation_criteria: What to optimise for ("quality", "speed", "balanced")
+    
+    Returns:
+        Comparison of responses with timing and quality scores
+    """
+    result = {"timestamp": datetime.now().isoformat(), "prompt": prompt[:200] + "...", "responses": [], "comparison": {}}
+    
+    if not is_process_running("MstySidecar"):
+        result["error"] = "Sidecar is not running"
+        return json.dumps(result, indent=2)
+    
+    if not models:
+        response = make_api_request("/v1/models", port=LOCAL_AI_SERVICE_PORT)
+        if response.get("success"):
+            data = response.get("data", {})
+            if isinstance(data, dict) and "data" in data:
+                models = [m.get("id") for m in data["data"]][:5]
+        if not models:
+            result["error"] = "No models available"
+            return json.dumps(result, indent=2)
+    
+    init_metrics_db()
+    
+    for model_id in models:
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        
+        start_time = time.time()
+        response = make_api_request("/v1/chat/completions", port=LOCAL_AI_SERVICE_PORT, method="POST",
+            data={"model": model_id, "messages": messages, "temperature": 0.7, "max_tokens": 1024, "stream": False}, timeout=120)
+        elapsed = time.time() - start_time
+        
+        model_result = {"model_id": model_id, "success": response.get("success", False), "latency_seconds": round(elapsed, 2)}
+        
+        if response.get("success"):
+            data = response.get("data", {})
+            if "choices" in data and data["choices"]:
+                content = data["choices"][0].get("message", {}).get("content", "") or data["choices"][0].get("message", {}).get("reasoning", "")
+                model_result["response"] = content[:500] + "..." if len(content) > 500 else content
+                model_result["response_length"] = len(content)
+                
+                if "usage" in data:
+                    model_result["tokens_per_second"] = round(data["usage"].get("completion_tokens", 0) / max(elapsed, 0.1), 1)
+                
+                eval_result = evaluate_response_heuristic(prompt, content, "general")
+                model_result["quality_score"] = round(eval_result["score"], 2)
+                
+                record_model_metric(model_id=model_id, completion_tokens=data.get("usage", {}).get("completion_tokens", 0),
+                    latency_seconds=elapsed, success=True, use_case="comparison")
+        
+        result["responses"].append(model_result)
+    
+    successful = [r for r in result["responses"] if r["success"]]
+    if successful:
+        if evaluation_criteria == "speed":
+            best = min(successful, key=lambda x: x["latency_seconds"])
+        elif evaluation_criteria == "quality":
+            best = max(successful, key=lambda x: x.get("quality_score", 0))
+        else:
+            best = max(successful, key=lambda x: x.get("quality_score", 0.5) * 0.6 + (1.0 / max(x["latency_seconds"], 0.1)) * 0.4)
+        result["comparison"]["winner"] = best["model_id"]
+    
+    return json.dumps(result, indent=2, default=str)
+
+
+@mcp.tool()
+def optimise_knowledge_stacks() -> str:
+    """
+    Analyse and recommend optimisations for knowledge stacks.
+    
+    Returns:
+        Recommendations for knowledge stack improvements
+    """
+    result = {"timestamp": datetime.now().isoformat(), "analysis": {}, "recommendations": []}
+    
+    paths = get_msty_paths()
+    db_path = paths.get("database")
+    
+    if not db_path:
+        result["error"] = "Msty database not found"
+        return json.dumps(result, indent=2)
+    
+    try:
+        tables = get_table_names(db_path)
+        ks_table = None
+        for t in ["knowledge_stacks", "knowledge_stack"]:
+            if t in tables:
+                ks_table = t
+                break
+        
+        if not ks_table:
+            result["note"] = "No knowledge stack table found"
+            return json.dumps(result, indent=2)
+        
+        stacks = query_database(db_path, f"SELECT * FROM {ks_table}")
+        result["analysis"]["total_stacks"] = len(stacks)
+        
+        if len(stacks) == 0:
+            result["recommendations"].append("No knowledge stacks found. Consider creating domain-specific stacks.")
+        elif len(stacks) > 10:
+            result["recommendations"].append(f"Many stacks ({len(stacks)}). Consider consolidating.")
+    except Exception as e:
+        result["error"] = str(e)
+    
+    return json.dumps(result, indent=2, default=str)
+
+
+@mcp.tool()
+def suggest_persona_improvements(persona_name: Optional[str] = None) -> str:
+    """
+    Analyse personas and suggest improvements.
+    
+    Args:
+        persona_name: Specific persona to analyse (None = all)
+    
+    Returns:
+        Suggestions for persona optimisation
+    """
+    result = {"timestamp": datetime.now().isoformat(), "analysis": {}, "suggestions": []}
+    
+    paths = get_msty_paths()
+    db_path = paths.get("database")
+    
+    if not db_path:
+        result["error"] = "Msty database not found"
+        return json.dumps(result, indent=2)
+    
+    try:
+        tables = get_table_names(db_path)
+        persona_table = "personas" if "personas" in tables else None
+        
+        if not persona_table:
+            result["note"] = "No persona table found"
+            return json.dumps(result, indent=2)
+        
+        if persona_name:
+            personas = query_database(db_path, f"SELECT * FROM {persona_table} WHERE name LIKE ?", (f"%{persona_name}%",))
+        else:
+            personas = query_database(db_path, f"SELECT * FROM {persona_table}")
+        
+        result["analysis"]["total_personas"] = len(personas)
+        
+        for p in personas:
+            name = p.get("name", "Unknown")
+            prompt_len = len(p.get("system_prompt", "") or p.get("prompt", "") or "")
+            temp = p.get("temperature")
+            
+            if prompt_len < 100:
+                result["suggestions"].append(f"'{name}': System prompt too short.")
+            elif prompt_len > 4000:
+                result["suggestions"].append(f"'{name}': System prompt very long.")
+            
+            if temp is not None and temp > 0.9:
+                result["suggestions"].append(f"'{name}': High temperature ({temp}) may cause inconsistency.")
+        
+        if len(personas) == 0:
+            result["suggestions"].append("No personas found. Create task-specific personas.")
+    except Exception as e:
+        result["error"] = str(e)
+    
+    return json.dumps(result, indent=2, default=str)
+
+
+# =============================================================================
+# Phase 5: Tiered AI Workflow / Calibration
+# =============================================================================
+
+@mcp.tool()
+def run_calibration_test(
+    model_id: Optional[str] = None,
+    category: str = "general",
+    custom_prompt: Optional[str] = None,
+    passing_threshold: float = 0.6
+) -> str:
+    """
+    Run a calibration test on a local model.
+    
+    Args:
+        model_id: Model to test (None = auto-select first available)
+        category: Test category ("general", "reasoning", "coding", "writing", "analysis", "creative")
+        custom_prompt: Use a custom prompt instead of built-in tests
+        passing_threshold: Minimum score to pass (0.0-1.0, default 0.6)
+    
+    Returns:
+        Test results with quality scores and recommendations
+    """
+    result = {"timestamp": datetime.now().isoformat(), "category": category, "tests": [], "summary": {}}
+    
+    if not is_process_running("MstySidecar"):
+        result["error"] = "Sidecar is not running"
+        return json.dumps(result, indent=2)
+    
+    if not model_id:
+        response = make_api_request("/v1/models", port=LOCAL_AI_SERVICE_PORT)
+        if response.get("success"):
+            data = response.get("data", {})
+            if isinstance(data, dict) and "data" in data and data["data"]:
+                model_id = data["data"][0].get("id")
+        if not model_id:
+            result["error"] = "No models available"
+            return json.dumps(result, indent=2)
+    
+    result["model_id"] = model_id
+    
+    prompts_to_test = []
+    if custom_prompt:
+        prompts_to_test = [(category, custom_prompt)]
+    elif category == "general":
+        for cat, prompts in CALIBRATION_PROMPTS.items():
+            if prompts:
+                prompts_to_test.append((cat, prompts[0]))
+    elif category in CALIBRATION_PROMPTS:
+        for p in CALIBRATION_PROMPTS[category]:
+            prompts_to_test.append((category, p))
+    else:
+        result["error"] = f"Unknown category: {category}"
+        return json.dumps(result, indent=2)
+    
+    init_metrics_db()
+    passed_count, total_score = 0, 0.0
+    
+    for test_cat, prompt in prompts_to_test:
+        import hashlib
+        test_id = hashlib.md5(f"{model_id}:{prompt}:{datetime.now().isoformat()}".encode()).hexdigest()[:12]
+        
+        start_time = time.time()
+        response = make_api_request("/v1/chat/completions", port=LOCAL_AI_SERVICE_PORT, method="POST",
+            data={"model": model_id, "messages": [{"role": "user", "content": prompt}], "temperature": 0.7, "max_tokens": 1024, "stream": False}, timeout=120)
+        elapsed = time.time() - start_time
+        
+        test_result = {"test_id": test_id, "category": test_cat, "prompt": prompt[:100] + "...", "latency_seconds": round(elapsed, 2)}
+        
+        if response.get("success"):
+            data = response.get("data", {})
+            if "choices" in data and data["choices"]:
+                content = data["choices"][0].get("message", {}).get("content", "") or data["choices"][0].get("message", {}).get("reasoning", "")
+                
+                evaluation = evaluate_response_heuristic(prompt, content, test_cat)
+                test_result["quality_score"] = round(evaluation["score"], 2)
+                test_result["passed"] = evaluation["score"] >= passing_threshold
+                test_result["notes"] = evaluation["notes"]
+                
+                total_score += evaluation["score"]
+                if test_result["passed"]:
+                    passed_count += 1
+                
+                save_calibration_result(test_id, model_id, test_cat, prompt, content, evaluation["score"], 
+                    json.dumps(evaluation["notes"]), elapsed, test_result["passed"])
+        else:
+            test_result["error"] = response.get("error")
+            test_result["passed"] = False
+        
+        result["tests"].append(test_result)
+    
+    total_tests = len(prompts_to_test)
+    result["summary"] = {
+        "total_tests": total_tests,
+        "passed": passed_count,
+        "pass_rate": round(passed_count / max(total_tests, 1) * 100, 1),
+        "average_score": round(total_score / max(total_tests, 1), 2)
+    }
+    
+    return json.dumps(result, indent=2, default=str)
+
+
+@mcp.tool()
+def evaluate_response_quality(prompt: str, response: str, category: str = "general") -> str:
+    """
+    Evaluate the quality of a model response.
+    
+    Args:
+        prompt: The original prompt
+        response: The model's response
+        category: Response category for specific evaluation criteria
+    
+    Returns:
+        Quality score (0.0-1.0) with detailed breakdown
+    """
+    evaluation = evaluate_response_heuristic(prompt, response, category)
+    
+    result = {
+        "timestamp": datetime.now().isoformat(),
+        "category": category,
+        "quality_score": round(evaluation["score"], 3),
+        "passed": evaluation["passed"],
+        "criteria_scores": {k: round(v, 2) for k, v in evaluation.get("criteria_scores", {}).items()},
+        "notes": evaluation["notes"],
+        "rubric": QUALITY_RUBRIC
+    }
+    
+    score = evaluation["score"]
+    if score >= 0.8:
+        result["interpretation"] = "Excellent"
+    elif score >= 0.6:
+        result["interpretation"] = "Good"
+    elif score >= 0.4:
+        result["interpretation"] = "Fair"
+    else:
+        result["interpretation"] = "Poor"
+    
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def identify_handoff_triggers(
+    analyse_recent: bool = True,
+    add_pattern: Optional[str] = None,
+    pattern_type: Optional[str] = None
+) -> str:
+    """
+    Identify and manage patterns that should trigger escalation to Claude.
+    
+    Args:
+        analyse_recent: Analyse recent calibration tests for triggers
+        add_pattern: Manually add a trigger pattern description
+        pattern_type: Type of pattern ("complexity", "domain", "quality", "safety", "creativity")
+    
+    Returns:
+        List of identified handoff triggers with confidence scores
+    """
+    result = {"timestamp": datetime.now().isoformat(), "triggers": [], "analysis": {}}
+    
+    init_metrics_db()
+    
+    if add_pattern and pattern_type:
+        record_handoff_trigger(pattern_type, add_pattern, 0.7)
+        result["added_pattern"] = {"type": pattern_type, "description": add_pattern}
+    
+    if analyse_recent:
+        calibration_results = get_calibration_results(limit=100)
+        failed = [r for r in calibration_results if not r.get("passed")]
+        
+        category_failures = {}
+        for test in failed:
+            cat = test.get("prompt_category", "unknown")
+            category_failures[cat] = category_failures.get(cat, 0) + 1
+        
+        result["analysis"]["failed_tests_count"] = len(failed)
+        result["analysis"]["failure_by_category"] = category_failures
+        
+        for cat, count in category_failures.items():
+            if count >= 3:
+                record_handoff_trigger("category_failure", f"Local model fails {cat} tasks", min(count / 10, 1.0))
+    
+    result["triggers"] = get_handoff_triggers(active_only=True)
+    result["trigger_count"] = len(result["triggers"])
+    
+    return json.dumps(result, indent=2, default=str)
+
+
+@mcp.tool()
+def get_calibration_history(
+    model_id: Optional[str] = None,
+    category: Optional[str] = None,
+    limit: int = 50
+) -> str:
+    """
+    Get historical calibration test results.
+    
+    Args:
+        model_id: Filter by specific model (None = all)
+        category: Filter by test category (None = all)
+        limit: Maximum results to return (default: 50)
+    
+    Returns:
+        Historical test results with trends and statistics
+    """
+    result = {"timestamp": datetime.now().isoformat(), "filters": {"model_id": model_id, "category": category}, "history": [], "statistics": {}}
+    
+    init_metrics_db()
+    
+    all_results = get_calibration_results(model_id=model_id, limit=limit)
+    
+    if category:
+        all_results = [r for r in all_results if r.get("prompt_category") == category]
+    
+    result["history"] = all_results
+    result["total_tests"] = len(all_results)
+    
+    if all_results:
+        scores = [r.get("quality_score", 0) for r in all_results if r.get("quality_score")]
+        passed = sum(1 for r in all_results if r.get("passed"))
+        
+        result["statistics"] = {
+            "average_score": round(sum(scores) / len(scores), 2) if scores else 0,
+            "pass_count": passed,
+            "pass_rate": round(passed / len(all_results) * 100, 1)
+        }
+    else:
+        result["note"] = "No calibration tests found. Run run_calibration_test to generate data."
+    
+    return json.dumps(result, indent=2, default=str)
 
 
 # =============================================================================
@@ -1915,10 +1518,13 @@ def recommend_model(
 
 def main():
     """Run the Msty Admin MCP server"""
-    logger.info("Starting Msty Admin MCP Server v3.0.1")
+    logger.info(f"Starting Msty Admin MCP Server v{SERVER_VERSION}")
     logger.info("Phase 1: Foundational Tools (Read-Only)")
     logger.info("Phase 2: Configuration Management")
     logger.info("Phase 3: Automation Bridge")
+    logger.info("Phase 4: Intelligence Layer")
+    logger.info("Phase 5: Tiered AI Workflow")
+    logger.info("Total tools: 24")
     mcp.run()
 
 
