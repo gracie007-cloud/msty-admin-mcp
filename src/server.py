@@ -95,7 +95,7 @@ mcp = FastMCP("msty-admin")
 # Constants
 # =============================================================================
 
-SERVER_VERSION = "6.0.1"
+SERVER_VERSION = "6.0.2"
 
 # Configurable via environment variables
 SIDECAR_HOST = os.environ.get("MSTY_SIDECAR_HOST", "127.0.0.1")
@@ -203,12 +203,21 @@ def get_msty_paths() -> dict:
             resolved["database"] = str(sidecar_db)
             resolved["database_type"] = "sidecar_shared"
 
+    # Check for SharedStorage in main data directory (Msty 2.4.0+)
+    # This is a SQLite file without .db extension
+    if not resolved["database"] and resolved["data"]:
+        shared_storage = Path(resolved["data"]) / "SharedStorage"
+        if shared_storage.exists() and shared_storage.is_file():
+            resolved["database"] = str(shared_storage)
+            resolved["database_type"] = "shared_storage"
+
     # Search for database files in data directory (Msty 2.4.0+)
     if not resolved["database"] and resolved["data"]:
         data_path = Path(resolved["data"])
 
         # Common database file patterns for Msty 2.4.0+
         db_patterns = [
+            "SharedStorage",  # Msty 2.4.0+ main database (no extension)
             "msty.db",
             "msty.sqlite",
             "msty.sqlite3",
