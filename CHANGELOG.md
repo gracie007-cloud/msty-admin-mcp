@@ -5,6 +5,24 @@ All notable changes to Msty Admin MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.3.0] - 2026-01-26
+
+### Added
+- **Standardized Error Response System** - Consistent API error format across all tools
+  - `ErrorCode` class with standard codes (DATABASE_NOT_FOUND, SERVICE_UNAVAILABLE, etc.)
+  - `error_response()` helper for creating standardized JSON error responses
+  - `success_response()` helper for standardized success responses
+  - `make_error_response()` and `make_success_response()` dict helpers
+- All error responses now include: `success`, `error.code`, `error.message`, `error.suggestion`, `timestamp`
+
+### Changed
+- Updated key tools to use standardized error responses:
+  - `read_msty_database` - now returns structured error with suggestion
+  - `list_configured_tools` - consistent error format
+  - `query_local_ai_service` - SERVICE_UNAVAILABLE with suggestion
+  - `recommend_model` - INVALID_PARAMETER with valid options
+  - `export_conversations` - DATABASE_NOT_FOUND with suggestion
+
 ## [6.2.0] - 2026-01-26
 
 ### Fixed

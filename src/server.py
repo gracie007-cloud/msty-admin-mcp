@@ -95,7 +95,7 @@ mcp = FastMCP("msty-admin")
 # Constants
 # =============================================================================
 
-SERVER_VERSION = "6.2.0"
+SERVER_VERSION = "6.3.0"
 
 # Configurable via environment variables
 SIDECAR_HOST = os.environ.get("MSTY_SIDECAR_HOST", "127.0.0.1")
@@ -165,6 +165,115 @@ class PersonaConfig:
     tools_enabled: list = field(default_factory=list)
     created_at: str = ""
     updated_at: str = ""
+
+
+# =============================================================================
+# Error Response Helpers
+# =============================================================================
+
+class ErrorCode:
+    """Standardized error codes for consistent API responses"""
+    DATABASE_NOT_FOUND = "DATABASE_NOT_FOUND"
+    DATABASE_ERROR = "DATABASE_ERROR"
+    SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
+    MODEL_NOT_FOUND = "MODEL_NOT_FOUND"
+    INVALID_PARAMETER = "INVALID_PARAMETER"
+    FILE_NOT_FOUND = "FILE_NOT_FOUND"
+    PERMISSION_DENIED = "PERMISSION_DENIED"
+    TIMEOUT = "TIMEOUT"
+    NETWORK_ERROR = "NETWORK_ERROR"
+    VALIDATION_ERROR = "VALIDATION_ERROR"
+    NOT_IMPLEMENTED = "NOT_IMPLEMENTED"
+    INTERNAL_ERROR = "INTERNAL_ERROR"
+
+
+def make_error_response(
+    error_code: str,
+    message: str,
+    suggestion: Optional[str] = None,
+    details: Optional[dict] = None
+) -> dict:
+    """
+    Create a standardized error response dict.
+
+    Args:
+        error_code: One of ErrorCode constants
+        message: Human-readable error message
+        suggestion: Optional suggestion for how to fix the issue
+        details: Optional additional details about the error
+
+    Returns:
+        Standardized error response dict
+    """
+    response = {
+        "success": False,
+        "error": {
+            "code": error_code,
+            "message": message
+        },
+        "timestamp": datetime.now().isoformat()
+    }
+    if suggestion:
+        response["error"]["suggestion"] = suggestion
+    if details:
+        response["error"]["details"] = details
+    return response
+
+
+def error_response(
+    error_code: str,
+    message: str,
+    suggestion: Optional[str] = None,
+    details: Optional[dict] = None
+) -> str:
+    """
+    Create a standardized JSON error response string.
+
+    Args:
+        error_code: One of ErrorCode constants
+        message: Human-readable error message
+        suggestion: Optional suggestion for how to fix the issue
+        details: Optional additional details about the error
+
+    Returns:
+        JSON string with standardized error format
+    """
+    return json.dumps(make_error_response(error_code, message, suggestion, details), indent=2)
+
+
+def make_success_response(data: dict, message: Optional[str] = None) -> dict:
+    """
+    Create a standardized success response dict.
+
+    Args:
+        data: The response data
+        message: Optional success message
+
+    Returns:
+        Standardized success response dict
+    """
+    response = {
+        "success": True,
+        "timestamp": datetime.now().isoformat(),
+        **data
+    }
+    if message:
+        response["message"] = message
+    return response
+
+
+def success_response(data: dict, message: Optional[str] = None) -> str:
+    """
+    Create a standardized JSON success response string.
+
+    Args:
+        data: The response data
+        message: Optional success message
+
+    Returns:
+        JSON string with standardized success format
+    """
+    return json.dumps(make_success_response(data, message), indent=2, default=str)
 
 
 # =============================================================================
@@ -789,7 +898,11 @@ def read_msty_database(
     db_path = paths.get("database")
     
     if not db_path:
-        return json.dumps({"error": "Msty database not found"})
+        return error_response(
+            ErrorCode.DATABASE_NOT_FOUND,
+            "Msty database not found",
+            suggestion="Run scan_database_locations to find your database, or set MSTY_DATABASE_PATH environment variable"
+        )
     
     result = {"query_type": query_type, "database_path": db_path}
     
@@ -861,7 +974,11 @@ def list_configured_tools() -> str:
     db_path = paths.get("database")
     
     if not db_path:
-        return json.dumps({"error": "Msty database not found", "tools": []})
+        return error_response(
+            ErrorCode.DATABASE_NOT_FOUND,
+            "Msty database not found",
+            suggestion="Run scan_database_locations to find your database"
+        )
     
     result = {"database_path": db_path, "tools": [], "tool_count": 0}
     tables = get_table_names(db_path)
@@ -1325,7 +1442,11 @@ def query_local_ai_service(
         Raw API response with status information
     """
     if not is_local_ai_available():
-        return json.dumps({"error": "No Local AI service is running. Start Msty Studio and enable services."})
+        return error_response(
+            ErrorCode.SERVICE_UNAVAILABLE,
+            "No Local AI service is running",
+            suggestion="Start Msty Studio and enable Local AI services"
+        )
 
     data = json.loads(request_body) if request_body else None
     response = make_api_request(endpoint, port=LOCAL_AI_SERVICE_PORT, method=method, data=data, timeout=30)
@@ -1499,7 +1620,11 @@ def recommend_model(use_case: str = "general", max_size_gb: Optional[float] = No
     }
     
     if use_case not in model_db:
-        return json.dumps({"error": f"Unknown use case", "valid": list(model_db.keys())})
+        return error_response(
+            ErrorCode.INVALID_PARAMETER,
+            f"Unknown use case: {use_case}",
+            suggestion=f"Valid use cases: {', '.join(model_db.keys())}"
+        )
     
     recommendations = model_db[use_case]
     if max_size_gb:
@@ -2244,9 +2369,11 @@ def export_conversations(
     db_path = paths.get("database")
 
     if not db_path:
-        result["error"] = "Msty database not found. Use scan_database_locations to find it."
-        result["suggestion"] = "Set MSTY_DATABASE_PATH environment variable"
-        return json.dumps(result, indent=2)
+        return error_response(
+            ErrorCode.DATABASE_NOT_FOUND,
+            "Msty database not found",
+            suggestion="Run scan_database_locations to find it, or set MSTY_DATABASE_PATH environment variable"
+        )
 
     try:
         # Query conversations
