@@ -54,17 +54,44 @@ import json
 import logging
 import os
 import platform
+import plistlib
 import sqlite3
 import urllib.request
 import urllib.error
 import time
-from dataclasses import dataclass, asdict, field
-from datetime import datetime
+from dataclasses import asdict
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional, Dict, List
 
 import psutil
 from mcp.server.fastmcp import FastMCP
+
+# Import from local modules
+from .constants import (
+    SERVER_VERSION,
+    SIDECAR_HOST,
+    SIDECAR_PROXY_PORT,
+    LOCAL_AI_SERVICE_PORT,
+    SIDECAR_TIMEOUT,
+    MLX_SERVICE_PORT,
+    LLAMACPP_SERVICE_PORT,
+    VIBE_PROXY_PORT,
+    ALLOWED_TABLE_NAMES
+)
+from .models import (
+    MstyInstallation,
+    MstyHealthReport,
+    DatabaseStats,
+    PersonaConfig
+)
+from .errors import (
+    ErrorCode,
+    error_response,
+    success_response,
+    make_error_response,
+    make_success_response
+)
 
 # Import Phase 4 & 5 utilities
 from .phase4_5_tools import (
@@ -90,190 +117,6 @@ logger = logging.getLogger("msty-admin-mcp")
 
 # Initialize FastMCP server
 mcp = FastMCP("msty-admin")
-
-# =============================================================================
-# Constants
-# =============================================================================
-
-SERVER_VERSION = "6.3.0"
-
-# Configurable via environment variables
-SIDECAR_HOST = os.environ.get("MSTY_SIDECAR_HOST", "127.0.0.1")
-SIDECAR_PROXY_PORT = int(os.environ.get("MSTY_PROXY_PORT", 11932))
-LOCAL_AI_SERVICE_PORT = int(os.environ.get("MSTY_AI_PORT", 11964))
-SIDECAR_TIMEOUT = int(os.environ.get("MSTY_TIMEOUT", 10))
-
-# Msty 2.4.0+ ports (services built into main app)
-MLX_SERVICE_PORT = int(os.environ.get("MSTY_MLX_PORT", 11973))
-LLAMACPP_SERVICE_PORT = int(os.environ.get("MSTY_LLAMACPP_PORT", 11454))
-VIBE_PROXY_PORT = int(os.environ.get("MSTY_VIBE_PORT", 8317))
-
-# =============================================================================
-# Data Classes
-# =============================================================================
-
-@dataclass
-class MstyInstallation:
-    """Msty Studio Desktop installation details"""
-    installed: bool
-    version: Optional[str] = None
-    app_path: Optional[str] = None
-    data_path: Optional[str] = None
-    sidecar_path: Optional[str] = None
-    database_path: Optional[str] = None
-    mlx_models_path: Optional[str] = None
-    is_running: bool = False
-    sidecar_running: bool = False
-    platform_info: dict = field(default_factory=dict)
-
-
-@dataclass
-class MstyHealthReport:
-    """Msty Studio health analysis"""
-    overall_status: str
-    database_status: dict = field(default_factory=dict)
-    storage_status: dict = field(default_factory=dict)
-    model_cache_status: dict = field(default_factory=dict)
-    recommendations: list = field(default_factory=list)
-    timestamp: str = ""
-
-
-@dataclass
-class DatabaseStats:
-    """Statistics from Msty database"""
-    total_conversations: int = 0
-    total_messages: int = 0
-    total_personas: int = 0
-    total_prompts: int = 0
-    total_knowledge_stacks: int = 0
-    total_tools: int = 0
-    database_size_mb: float = 0.0
-    last_activity: Optional[str] = None
-
-
-@dataclass
-class PersonaConfig:
-    """Msty persona configuration structure"""
-    name: str
-    description: str = ""
-    system_prompt: str = ""
-    temperature: float = 0.7
-    top_p: float = 0.9
-    max_tokens: int = 4096
-    model_preference: Optional[str] = None
-    knowledge_stacks: list = field(default_factory=list)
-    tools_enabled: list = field(default_factory=list)
-    created_at: str = ""
-    updated_at: str = ""
-
-
-# =============================================================================
-# Error Response Helpers
-# =============================================================================
-
-class ErrorCode:
-    """Standardized error codes for consistent API responses"""
-    DATABASE_NOT_FOUND = "DATABASE_NOT_FOUND"
-    DATABASE_ERROR = "DATABASE_ERROR"
-    SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
-    MODEL_NOT_FOUND = "MODEL_NOT_FOUND"
-    INVALID_PARAMETER = "INVALID_PARAMETER"
-    FILE_NOT_FOUND = "FILE_NOT_FOUND"
-    PERMISSION_DENIED = "PERMISSION_DENIED"
-    TIMEOUT = "TIMEOUT"
-    NETWORK_ERROR = "NETWORK_ERROR"
-    VALIDATION_ERROR = "VALIDATION_ERROR"
-    NOT_IMPLEMENTED = "NOT_IMPLEMENTED"
-    INTERNAL_ERROR = "INTERNAL_ERROR"
-
-
-def make_error_response(
-    error_code: str,
-    message: str,
-    suggestion: Optional[str] = None,
-    details: Optional[dict] = None
-) -> dict:
-    """
-    Create a standardized error response dict.
-
-    Args:
-        error_code: One of ErrorCode constants
-        message: Human-readable error message
-        suggestion: Optional suggestion for how to fix the issue
-        details: Optional additional details about the error
-
-    Returns:
-        Standardized error response dict
-    """
-    response = {
-        "success": False,
-        "error": {
-            "code": error_code,
-            "message": message
-        },
-        "timestamp": datetime.now().isoformat()
-    }
-    if suggestion:
-        response["error"]["suggestion"] = suggestion
-    if details:
-        response["error"]["details"] = details
-    return response
-
-
-def error_response(
-    error_code: str,
-    message: str,
-    suggestion: Optional[str] = None,
-    details: Optional[dict] = None
-) -> str:
-    """
-    Create a standardized JSON error response string.
-
-    Args:
-        error_code: One of ErrorCode constants
-        message: Human-readable error message
-        suggestion: Optional suggestion for how to fix the issue
-        details: Optional additional details about the error
-
-    Returns:
-        JSON string with standardized error format
-    """
-    return json.dumps(make_error_response(error_code, message, suggestion, details), indent=2)
-
-
-def make_success_response(data: dict, message: Optional[str] = None) -> dict:
-    """
-    Create a standardized success response dict.
-
-    Args:
-        data: The response data
-        message: Optional success message
-
-    Returns:
-        Standardized success response dict
-    """
-    response = {
-        "success": True,
-        "timestamp": datetime.now().isoformat(),
-        **data
-    }
-    if message:
-        response["message"] = message
-    return response
-
-
-def success_response(data: dict, message: Optional[str] = None) -> str:
-    """
-    Create a standardized JSON success response string.
-
-    Args:
-        data: The response data
-        message: Optional success message
-
-    Returns:
-        JSON string with standardized success format
-    """
-    return json.dumps(make_success_response(data, message), indent=2, default=str)
 
 
 # =============================================================================
@@ -668,15 +511,6 @@ def get_table_names(db_path: str) -> list:
     query = "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
     results = query_database(db_path, query)
     return [r['name'] for r in results]
-
-
-# Safe table names allowlist for SQL queries
-ALLOWED_TABLE_NAMES = frozenset([
-    "chats", "messages", "personas", "prompts", "mcp_tools", "tools",
-    "knowledge_stacks", "models", "settings", "conversations", "users",
-    "attachments", "embeddings", "tags", "folders", "providers",
-    "chat_sessions", "chat_messages", "prompt_library"
-])
 
 
 def is_safe_table_name(table_name: str) -> bool:

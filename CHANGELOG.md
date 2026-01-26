@@ -5,6 +5,20 @@ All notable changes to Msty Admin MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.4.0] - 2026-01-26
+
+### Added
+- **Modular Architecture** - Extracted core components into separate modules
+  - `src/constants.py` - Server version, port configs, table allowlists, model patterns
+  - `src/models.py` - Data classes (MstyInstallation, MstyHealthReport, DatabaseStats, PersonaConfig)
+  - `src/errors.py` - ErrorCode class and response helpers
+- Updated `src/__init__.py` with proper exports for all modules
+
+### Changed
+- Server.py reduced from 3741 to 3575 lines (~4.5% reduction)
+- Version now sourced from `constants.py` for single source of truth
+- Improved import organization in server.py
+
 ## [6.3.0] - 2026-01-26
 
 ### Added
