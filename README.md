@@ -4,32 +4,46 @@
 
 An MCP (Model Context Protocol) server that transforms Claude into an intelligent system administrator for [Msty Studio Desktop](https://msty.ai). Query databases, manage configurations, orchestrate local AI models, and build tiered AI workflows—all through natural conversation.
 
-[![Version](https://img.shields.io/badge/version-5.0.0-blue.svg)](https://github.com/DRVBSS/msty-admin-mcp/releases)
+[![Version](https://img.shields.io/badge/version-6.5.0-blue.svg)](https://github.com/DRVBSS/msty-admin-mcp/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10+-yellow.svg)](https://python.org)
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://apple.com)
 [![Msty](https://img.shields.io/badge/Msty-2.4.0+-purple.svg)](https://msty.ai)
+[![Tests](https://img.shields.io/badge/tests-109%20passing-brightgreen.svg)](tests/)
 
-> **v5.0.0** - Full support for Msty 2.4.0+ architecture with Local AI, MLX, LLaMA.cpp, and Vibe Proxy services.
+> **v6.5.0** - Complete modular architecture with 42 tools, comprehensive testing, and full Msty 2.4.0+ support.
 
 ---
 
-## What's New in v5.0.0
+## What's New in v6.5.0
 
-This version completely rewrites service detection for **Msty 2.4.0+**, which has Local AI services built directly into the main app (no separate Sidecar needed):
+### Modular Architecture
+The codebase has been refactored into dedicated utility modules for better maintainability and testability:
 
+| Module | Purpose |
+|--------|---------|
+| `constants.py` | Server config, ports, table allowlists |
+| `models.py` | Data classes (MstyInstallation, etc.) |
+| `errors.py` | Standardized error responses |
+| `paths.py` | macOS path resolution |
+| `database.py` | SQL operations with injection protection |
+| `network.py` | API requests, process detection |
+| `cache.py` | Response caching with TTL |
+| `tagging.py` | Smart model categorization (60+ overrides) |
+
+### Comprehensive Testing
+- **109 unit tests** covering all utility modules
+- SQL injection protection verified
+- Error handling tested
+- Cache behavior validated
+
+### Msty 2.4.0+ Service Support
 | Service | Port | Description |
 |---------|------|-------------|
 | **Local AI Service** | 11964 | Ollama-compatible API |
 | **MLX Service** | 11973 | Apple Silicon optimized models |
 | **LLaMA.cpp Service** | 11454 | GGUF model support |
 | **Vibe CLI Proxy** | 8317 | Unified proxy for all AI services |
-
-**Key Changes:**
-- Detects all 4 services automatically
-- Lists models from ALL services (not just one)
-- No longer requires `MstySidecar` process
-- Includes shell script launcher for reliable Claude Desktop integration
 
 ---
 
@@ -43,7 +57,7 @@ Msty Admin MCP lets you manage your entire Msty Studio installation through Clau
 
 > "What models do I have available across all services?"
 
-> "What's the health status of my Msty installation?"
+> "Benchmark my fastest model for coding tasks"
 
 Claude handles the rest—querying databases, calling APIs, analysing results, and presenting actionable insights.
 
@@ -98,13 +112,13 @@ pip install -r requirements.txt
 
 3. **Restart Claude Desktop** (Cmd+Q, then reopen)
 
-4. You should see "msty-admin" in your available tools with 24 tools loaded.
+4. You should see "msty-admin" in your available tools with **42 tools** loaded.
 
 ---
 
-## Available Tools (24 Total)
+## Available Tools (42 Total)
 
-### Phase 1: Installation & Health
+### Phase 1: Installation & Health (7 tools)
 | Tool | Description |
 |------|-------------|
 | `detect_msty_installation` | Find Msty Studio, verify paths, check running status |
@@ -113,8 +127,9 @@ pip install -r requirements.txt
 | `get_model_providers` | List AI providers and local models |
 | `analyse_msty_health` | Database integrity, storage, all 4 service status |
 | `get_server_status` | MCP server info and capabilities |
+| `scan_database_locations` | Find database files in common locations |
 
-### Phase 2: Configuration Management
+### Phase 2: Configuration Management (4 tools)
 | Tool | Description |
 |------|-------------|
 | `export_tool_config` | Export MCP configs for backup or sync |
@@ -122,7 +137,7 @@ pip install -r requirements.txt
 | `generate_persona` | Create personas from templates (opus, coder, writer, minimal) |
 | `sync_claude_preferences` | Convert Claude Desktop preferences to Msty persona |
 
-### Phase 3: Local Model Integration
+### Phase 3: Local Model Integration (8 tools)
 | Tool | Description |
 |------|-------------|
 | `get_sidecar_status` | Check all 4 services (Local AI, MLX, LLaMA.cpp, Vibe Proxy) |
@@ -130,8 +145,12 @@ pip install -r requirements.txt
 | `query_local_ai_service` | Direct low-level API access |
 | `chat_with_local_model` | Send messages with automatic metric tracking |
 | `recommend_model` | Hardware-aware model recommendations by use case |
+| `list_model_tags` | Get available tags for smart model selection |
+| `find_model_by_tag` | Find models matching specific tags |
+| `get_cache_stats` | View response cache statistics |
+| `clear_cache` | Clear cached responses |
 
-### Phase 4: Intelligence & Analytics
+### Phase 4: Intelligence & Analytics (5 tools)
 | Tool | Description |
 |------|-------------|
 | `get_model_performance_metrics` | Tokens/sec, latency, error rates over time |
@@ -140,13 +159,85 @@ pip install -r requirements.txt
 | `optimise_knowledge_stacks` | Analyse and recommend improvements |
 | `suggest_persona_improvements` | AI-powered persona optimisation |
 
-### Phase 5: Calibration & Workflow
+### Phase 5: Calibration & Workflow (4 tools)
 | Tool | Description |
 |------|-------------|
 | `run_calibration_test` | Test models across categories with quality scoring |
 | `evaluate_response_quality` | Score any response using heuristic evaluation |
 | `identify_handoff_triggers` | Track patterns that should escalate to Claude |
 | `get_calibration_history` | Historical results with trends and statistics |
+
+### Phase 6: Advanced Model Management (4 tools)
+| Tool | Description |
+|------|-------------|
+| `get_model_details` | Comprehensive model info (context length, parameters, tags, capabilities) |
+| `benchmark_model` | Performance benchmarks at different context sizes (tokens/sec) |
+| `list_local_model_files` | List MLX and GGUF model files on disk with sizes |
+| `estimate_model_requirements` | Estimate memory/hardware requirements for a model |
+
+### Phase 7: Conversation Management (3 tools)
+| Tool | Description |
+|------|-------------|
+| `export_conversations` | Export chat history in JSON, Markdown, or CSV format |
+| `search_conversations` | Search through conversations by keyword or title |
+| `get_conversation_stats` | Usage analytics: messages per day, model usage, session lengths |
+
+### Phase 8: Prompt Templates & Automation (4 tools)
+| Tool | Description |
+|------|-------------|
+| `create_prompt_template` | Create reusable templates with `{{variable}}` placeholders |
+| `list_prompt_templates` | List all templates, optionally filtered by category |
+| `run_prompt_template` | Execute a template with variable substitutions |
+| `smart_model_router` | Auto-select the best model for a given task description |
+
+### Phase 9: Backup & System Management (3 tools)
+| Tool | Description |
+|------|-------------|
+| `backup_configuration` | Create comprehensive backup of personas, prompts, templates, tools |
+| `restore_configuration` | Restore configuration from a backup file |
+| `get_system_resources` | CPU, memory, and disk usage relevant to AI inference |
+
+---
+
+## Model Tagging System
+
+Msty Admin MCP includes a smart model tagging system with 60+ model-specific overrides for accurate routing.
+
+### Available Tags
+
+| Category | Tags | Description |
+|----------|------|-------------|
+| **Size** | `large`, `medium`, `small` | Model parameter count (70B+, 13-34B, <13B) |
+| **Speed** | `fast` | Quick response models (Haiku, Flash, Mini, etc.) |
+| **Capability** | `coding`, `reasoning`, `creative`, `vision`, `embedding` | Specialized capabilities |
+| **Context** | `long_context` | Models with 128K+ context windows |
+| **Quality** | `quality` | High-quality output models |
+| **General** | `general` | General-purpose models |
+
+### Finding Models by Tag
+
+```
+You: Find me a fast coding model
+
+Claude: Using find_model_by_tag with tag="coding" and prefer_fast=true...
+
+        Found 3 fast coding models:
+        1. deepseek-coder-v2-lite (fast, coding, small)
+        2. codestral-mini (fast, coding, small)
+        3. starcoder2-3b (fast, coding, small)
+```
+
+### Smart Model Router
+
+```
+You: What's the best model for writing a poem?
+
+Claude: Using smart_model_router with task="writing a poem"...
+
+        Recommended: claude-3-opus (tags: quality, creative, reasoning, large)
+        Reasoning: Creative writing tasks benefit from models with
+        the 'creative' tag and high quality output.
+```
 
 ---
 
@@ -166,39 +257,52 @@ Claude: All 4 services are running:
         Total: 59 models available
 ```
 
-### List All Models
+### Benchmark a Model
 
 ```
-You: What models do I have?
+You: Benchmark my fastest coding model
 
-Claude: Found 59 models across all services:
+Claude: Running benchmark on deepseek-coder-v2-lite...
 
-        MLX (Apple Silicon):
-        - Qwen3-235B-A22B-8bit
-        - Hermes-4-405B-MLX-6bit
-        - DeepSeek-Coder-V2-Instruct-Q4
-        ...
+        Results (3 runs each):
+        | Context | Tokens/sec | Latency |
+        |---------|------------|---------|
+        | 50 tokens | 42.3 t/s | 1.2s |
+        | 200 tokens | 38.7 t/s | 5.2s |
+        | 500 tokens | 35.1 t/s | 14.3s |
 
-        LLaMA.cpp (GGUF):
-        - DeepSeek-V3-0324-UD-Q4_K_XL
-        - Llama-3.3-70B-Instruct-Q8_0
-        - Nemotron-Ultra-253B
-        ...
+        Average: 38.7 tokens/sec
 ```
 
-### Health Check
+### Export Conversations
 
 ```
-You: Check the health of my Msty installation
+You: Export my last week's conversations to markdown
 
-Claude: Health Status: ✅ Healthy
+Claude: Exported 23 conversations from the last 7 days.
 
-        Msty Studio: Running ✅
-        Local AI Service (port 11964): Running ✅
-        MLX Service (port 11973): Running ✅
-        LLaMA.cpp Service (port 11454): Running ✅
+        File: conversations_2026-01-26.md
+        Format: Markdown with headers per conversation
+        Total messages: 156
+```
 
-        No issues detected.
+### Create Prompt Template
+
+```
+You: Create a code review template
+
+Claude: Created template "code-review":
+
+        Template: "Review this {{language}} code for {{focus}}:
+
+                   ```{{language}}
+                   {{code}}
+                   ```
+
+                   Provide specific suggestions."
+
+        Variables: language, focus, code
+        Category: coding
 ```
 
 ---
@@ -215,6 +319,7 @@ Customize behavior with these environment variables:
 | `MSTY_LLAMACPP_PORT` | `11454` | LLaMA.cpp Service port |
 | `MSTY_VIBE_PORT` | `8317` | Vibe CLI Proxy port |
 | `MSTY_TIMEOUT` | `10` | API request timeout (seconds) |
+| `MSTY_DATABASE_PATH` | (auto-detect) | Override database path |
 
 ---
 
@@ -230,7 +335,7 @@ Customize behavior with these environment variables:
 │                ▼                     ▼                      │
 │      ┌─────────────────┐   ┌─────────────────┐             │
 │      │ Msty Admin MCP  │   │  Other MCPs     │             │
-│      │   (24 tools)    │   │                 │             │
+│      │   (42 tools)    │   │                 │             │
 │      └────────┬────────┘   └─────────────────┘             │
 └───────────────┼─────────────────────────────────────────────┘
                 │
@@ -258,6 +363,51 @@ Customize behavior with these environment variables:
 
 ---
 
+## Project Structure
+
+```
+msty-admin-mcp/
+├── src/
+│   ├── __init__.py         # Package exports
+│   ├── constants.py        # Configuration constants
+│   ├── models.py           # Data classes
+│   ├── errors.py           # Standardized error handling
+│   ├── paths.py            # Path resolution utilities
+│   ├── database.py         # SQL operations (injection protected)
+│   ├── network.py          # API request helpers
+│   ├── cache.py            # Response caching
+│   ├── tagging.py          # Model tagging system
+│   ├── server.py           # Main MCP server (42 tools)
+│   └── phase4_5_tools.py   # Metrics and calibration
+├── tests/
+│   ├── test_server.py      # Integration tests
+│   ├── test_constants.py   # Constants tests
+│   ├── test_paths.py       # Path utilities tests
+│   ├── test_database.py    # Database tests (SQL injection)
+│   ├── test_network.py     # Network tests
+│   ├── test_cache.py       # Cache tests
+│   └── test_tagging.py     # Tagging tests
+├── docs/
+│   ├── API.md              # API reference & error codes
+│   └── DEVELOPMENT.md      # Development guide
+├── run_msty_server.sh      # Shell script launcher (required!)
+├── requirements.txt
+├── pyproject.toml
+├── CHANGELOG.md
+├── LICENSE
+└── README.md
+```
+
+---
+
+## Documentation
+
+- **[API Reference](docs/API.md)** - Error codes, response formats, tool parameters
+- **[Development Guide](docs/DEVELOPMENT.md)** - Contributing, testing, architecture
+- **[Changelog](CHANGELOG.md)** - Version history and migration notes
+
+---
+
 ## Troubleshooting
 
 ### "ModuleNotFoundError: No module named 'src'"
@@ -280,25 +430,21 @@ Claude Desktop isn't running from the correct directory. Make sure you're using 
 
 The models shown depend on which service responds first. Use `list_available_models` to see ALL models from all services with the `by_service` breakdown.
 
+### Database not found
+
+1. Run `detect_msty_installation` first to verify paths
+2. Use `scan_database_locations` to find database files
+3. Set `MSTY_DATABASE_PATH` environment variable if needed
+
 ---
 
-## Project Structure
+## Security
 
-```
-msty-admin-mcp/
-├── src/
-│   ├── __init__.py
-│   ├── server.py           # Main MCP server (24 tools)
-│   └── phase4_5_tools.py   # Metrics and calibration utilities
-├── tests/
-│   └── test_server.py
-├── run_msty_server.sh      # Shell script launcher (required!)
-├── requirements.txt
-├── pyproject.toml
-├── CHANGELOG.md
-├── LICENSE
-└── README.md
-```
+See [docs/API.md](docs/API.md#security) for details on:
+
+- **SQL Injection Protection** - Table allowlists, parameterized queries
+- **API Key Handling** - Keys are never logged or returned
+- **Network Security** - All calls to localhost, configurable timeouts
 
 ---
 
@@ -308,16 +454,19 @@ Contributions welcome! Please:
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+3. Run tests (`pytest tests/ -v`)
+4. Commit your changes (`git commit -m 'Add amazing feature'`)
+5. Push to the branch (`git push origin feature/amazing-feature`)
+6. Open a Pull Request
+
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for detailed contribution guidelines.
 
 ---
 
 ## Credits
 
 - **Original Author**: [Pineapple](https://github.com/M-Pineapple) - Created the original msty-admin-mcp
-- **v5.0.0 Fork**: [DBSS](https://github.com/DRVBSS) - Msty 2.4.0+ compatibility updates
+- **v5.0.0+ Fork**: [DBSS](https://github.com/DRVBSS) - Msty 2.4.0+ compatibility, modular architecture
 
 ---
 
