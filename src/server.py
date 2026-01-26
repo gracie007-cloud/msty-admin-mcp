@@ -95,7 +95,7 @@ mcp = FastMCP("msty-admin")
 # Constants
 # =============================================================================
 
-SERVER_VERSION = "6.1.0"
+SERVER_VERSION = "6.2.0"
 
 # Configurable via environment variables
 SIDECAR_HOST = os.environ.get("MSTY_SIDECAR_HOST", "127.0.0.1")
@@ -499,7 +499,7 @@ def is_local_ai_available(port: int = None, timeout: int = 2) -> bool:
         req = urllib.request.Request(url)
         with urllib.request.urlopen(req, timeout=timeout) as response:
             return response.status == 200
-    except:
+    except (urllib.error.URLError, urllib.error.HTTPError, OSError, TimeoutError):
         return False
 
 
@@ -561,13 +561,66 @@ def get_table_names(db_path: str) -> list:
     return [r['name'] for r in results]
 
 
-def get_table_row_count(db_path: str, table_name: str) -> int:
-    """Get row count for a specific table"""
-    if not table_name.isidentifier():
+# Safe table names allowlist for SQL queries
+ALLOWED_TABLE_NAMES = frozenset([
+    "chats", "messages", "personas", "prompts", "mcp_tools", "tools",
+    "knowledge_stacks", "models", "settings", "conversations", "users",
+    "attachments", "embeddings", "tags", "folders", "providers",
+    "chat_sessions", "chat_messages", "prompt_library"
+])
+
+
+def is_safe_table_name(table_name: str) -> bool:
+    """Validate table name against allowlist to prevent SQL injection"""
+    if not table_name:
+        return False
+    # Must be valid identifier AND in allowlist
+    return table_name.isidentifier() and table_name.lower() in ALLOWED_TABLE_NAMES
+
+
+def validate_table_exists(db_path: str, table_name: str) -> bool:
+    """Check if table exists in database AND is safe to query"""
+    if not table_name or not table_name.isidentifier():
+        return False
+    existing_tables = get_table_names(db_path)
+    return table_name in existing_tables
+
+
+def safe_query_table(db_path: str, table_name: str, limit: int = 100, where_clause: str = None, params: tuple = ()) -> list:
+    """
+    Safely query a table with SQL injection protection.
+    Table name must exist in database and be a valid identifier.
+    """
+    if not validate_table_exists(db_path, table_name):
+        logger.warning(f"Rejected query for non-existent or invalid table: {table_name}")
+        return []
+
+    # Build safe query - table name validated against actual database tables
+    query = f"SELECT * FROM {table_name}"
+    if where_clause:
+        query += f" WHERE {where_clause}"
+    query += " LIMIT ?"
+
+    return query_database(db_path, query, params + (limit,))
+
+
+def safe_count_table(db_path: str, table_name: str, where_clause: str = None, params: tuple = ()) -> int:
+    """Safely count rows in a table with SQL injection protection."""
+    if not validate_table_exists(db_path, table_name):
+        logger.warning(f"Rejected count for non-existent or invalid table: {table_name}")
         return 0
+
     query = f"SELECT COUNT(*) as count FROM {table_name}"
-    results = query_database(db_path, query)
+    if where_clause:
+        query += f" WHERE {where_clause}"
+
+    results = query_database(db_path, query, params)
     return results[0]['count'] if results else 0
+
+
+def get_table_row_count(db_path: str, table_name: str) -> int:
+    """Get row count for a specific table (SQL injection safe)"""
+    return safe_count_table(db_path, table_name)
 
 
 # =============================================================================
@@ -609,7 +662,7 @@ def make_api_request(
         try:
             error_body = e.read().decode('utf-8', errors='ignore')[:200]
             logger.warning(f"HTTP {e.code} on {endpoint}: {error_body}")
-        except:
+        except (OSError, UnicodeDecodeError):
             error_body = None
         return {"success": False, "error": f"HTTP {e.code}: {e.reason}", "status_code": e.code, "error_body": error_body}
     except json.JSONDecodeError:
@@ -682,7 +735,7 @@ def detect_msty_installation() -> str:
                 with open(plist_path, 'rb') as f:
                     plist = plistlib.load(f)
                     version = plist.get('CFBundleShortVersionString', plist.get('CFBundleVersion'))
-            except:
+            except (OSError, plistlib.InvalidFileException, KeyError):
                 pass
     
     platform_info = {
@@ -770,21 +823,23 @@ def read_msty_database(
             result["available_tables"] = tables
             
         elif query_type == "custom" and table_name:
-            if table_name in get_table_names(db_path):
-                result["data"] = query_database(db_path, f"SELECT * FROM {table_name} LIMIT ?", (limit,))
+            data = safe_query_table(db_path, table_name, limit=limit)
+            if data:
+                result["data"] = data
             else:
-                result["error"] = f"Table '{table_name}' not found"
+                result["error"] = f"Table '{table_name}' not found or empty"
         else:
             table_map = {
-                "conversations": ["chat_sessions", "conversations"],
+                "conversations": ["chat_sessions", "conversations", "chats"],
                 "personas": ["personas"],
                 "prompts": ["prompts", "prompt_library"],
                 "tools": ["tools", "mcp_tools"],
             }
             if query_type in table_map:
                 for t in table_map[query_type]:
-                    if t in get_table_names(db_path):
-                        result[query_type] = query_database(db_path, f"SELECT * FROM {t} LIMIT ?", (limit,))
+                    data = safe_query_table(db_path, t, limit=limit)
+                    if data:
+                        result[query_type] = data
                         break
     except Exception as e:
         result["error"] = str(e)
@@ -813,7 +868,7 @@ def list_configured_tools() -> str:
     tool_tables = [t for t in tables if "tool" in t.lower() or "mcp" in t.lower()]
     
     for table in tool_tables:
-        tools = query_database(db_path, f"SELECT * FROM {table}")
+        tools = safe_query_table(db_path, table, limit=1000)
         if tools:
             result["tools"].extend(tools)
             break
@@ -1409,16 +1464,16 @@ def chat_with_local_model(
                         success=True,
                         use_case="chat"
                     )
-                except:
-                    pass
+                except (sqlite3.Error, OSError) as e:
+                    logger.warning(f"Failed to record metrics: {e}")
     else:
         result["error"] = response.get("error")
         if track_metrics:
             try:
                 init_metrics_db()
                 record_model_metric(model_id=model, latency_seconds=elapsed_time, success=False, error_message=response.get("error"))
-            except:
-                pass
+            except (sqlite3.Error, OSError) as e:
+                logger.warning(f"Failed to record metrics: {e}")
     
     return json.dumps(result, indent=2, default=str)
 
@@ -1666,7 +1721,7 @@ def scan_database_locations() -> str:
                                 "name": item.name + "/",
                                 "type": "directory"
                             })
-                    except:
+                    except (OSError, PermissionError):
                         pass
                 location_info["all_files"] = all_files[:30]  # Limit for readability
 
@@ -1682,7 +1737,7 @@ def scan_database_locations() -> str:
                                     "modified": datetime.fromtimestamp(stat.st_mtime).isoformat()
                                 })
                                 result["found_databases"].append(str(db_file))
-                        except:
+                        except (OSError, PermissionError):
                             pass
 
                 # Find other data files (JSON configs, LevelDB, etc.)
@@ -1701,7 +1756,7 @@ def scan_database_locations() -> str:
                                     file_info["note"] = "Potential config/data file"
                                 location_info["data_files"].append(file_info)
                                 result["found_data_files"].append(str(data_file))
-                        except:
+                        except (OSError, PermissionError):
                             pass
 
             except PermissionError:
@@ -1967,8 +2022,8 @@ def benchmark_model(
                         success=True,
                         use_case="benchmark"
                     )
-    except:
-        pass
+    except (sqlite3.Error, OSError) as e:
+        logger.debug(f"Could not record benchmark metrics: {e}")
 
     return json.dumps(result, indent=2)
 
@@ -2034,7 +2089,7 @@ def list_local_model_files() -> str:
                         "path": str(gguf_file),
                         "size_gb": round(size_gb, 2)
                     })
-                except:
+                except (OSError, PermissionError):
                     pass
 
     result["total_size_gb"] = round(total_size / (1024 ** 3), 2)
@@ -2207,7 +2262,12 @@ def export_conversations(
             result["available_tables"] = tables
             return json.dumps(result, indent=2)
 
-        # Build query
+        # Validate table exists before querying (SQL injection protection)
+        if not validate_table_exists(db_path, conv_table):
+            result["error"] = f"Table validation failed for {conv_table}"
+            return json.dumps(result, indent=2)
+
+        # Build query with parameterized limit
         query = f"SELECT * FROM {conv_table}"
         params = []
 
@@ -2216,9 +2276,10 @@ def export_conversations(
             query += " WHERE created_at > ? OR updated_at > ?"
             params.extend([cutoff, cutoff])
 
-        query += f" ORDER BY rowid DESC LIMIT {limit}"
+        query += " ORDER BY rowid DESC LIMIT ?"
+        params.append(limit)
 
-        conversations = query_database(db_path, query, tuple(params) if params else ())
+        conversations = query_database(db_path, query, tuple(params))
 
         if model_filter:
             conversations = [c for c in conversations if model_filter.lower() in str(c.get("model", "")).lower()]
@@ -2290,17 +2351,14 @@ def search_conversations(
                 conv_table = t
                 break
 
-        if conv_table:
-            if search_type == "title":
-                sql = f"SELECT * FROM {conv_table} WHERE title LIKE ? LIMIT ?"
-            else:
-                sql = f"SELECT * FROM {conv_table} WHERE title LIKE ? OR summary LIKE ? LIMIT ?"
-
+        if conv_table and validate_table_exists(db_path, conv_table):
             search_pattern = f"%{query}%"
 
             if search_type == "title":
+                sql = f"SELECT * FROM {conv_table} WHERE title LIKE ? LIMIT ?"
                 matches = query_database(db_path, sql, (search_pattern, limit))
             else:
+                sql = f"SELECT * FROM {conv_table} WHERE title LIKE ? OR summary LIKE ? LIMIT ?"
                 matches = query_database(db_path, sql, (search_pattern, search_pattern, limit))
 
             result["matches"] = matches
@@ -2312,7 +2370,7 @@ def search_conversations(
                 msg_table = t
                 break
 
-        if msg_table:
+        if msg_table and validate_table_exists(db_path, msg_table):
             msg_sql = f"SELECT * FROM {msg_table} WHERE content LIKE ? LIMIT ?"
             msg_matches = query_database(db_path, msg_sql, (f"%{query}%", limit))
             result["message_matches"] = len(msg_matches)
@@ -2361,20 +2419,16 @@ def get_conversation_stats(days: int = 30) -> str:
                 conv_table = t
                 break
 
-        if conv_table:
-            total = query_database(db_path, f"SELECT COUNT(*) as count FROM {conv_table}")
-            result["stats"]["total_conversations"] = total[0]["count"] if total else 0
+        if conv_table and validate_table_exists(db_path, conv_table):
+            result["stats"]["total_conversations"] = safe_count_table(db_path, conv_table)
 
             # Recent conversations
             cutoff = (datetime.now() - timedelta(days=days)).isoformat()
-            recent = query_database(
-                db_path,
-                f"SELECT COUNT(*) as count FROM {conv_table} WHERE created_at > ?",
-                (cutoff,)
+            result["stats"]["recent_conversations"] = safe_count_table(
+                db_path, conv_table, "created_at > ?", (cutoff,)
             )
-            result["stats"]["recent_conversations"] = recent[0]["count"] if recent else 0
 
-            # Model usage
+            # Model usage - safe query with validated table
             model_usage = query_database(
                 db_path,
                 f"SELECT model, COUNT(*) as count FROM {conv_table} GROUP BY model ORDER BY count DESC LIMIT 10"
@@ -2388,11 +2442,10 @@ def get_conversation_stats(days: int = 30) -> str:
                 msg_table = t
                 break
 
-        if msg_table:
-            total_msgs = query_database(db_path, f"SELECT COUNT(*) as count FROM {msg_table}")
-            result["stats"]["total_messages"] = total_msgs[0]["count"] if total_msgs else 0
+        if msg_table and validate_table_exists(db_path, msg_table):
+            result["stats"]["total_messages"] = safe_count_table(db_path, msg_table)
 
-            # Messages by role
+            # Messages by role - safe query with validated table
             role_counts = query_database(
                 db_path,
                 f"SELECT role, COUNT(*) as count FROM {msg_table} GROUP BY role"
@@ -2406,9 +2459,8 @@ def get_conversation_stats(days: int = 30) -> str:
             )
 
         # Personas if available
-        if "personas" in tables:
-            personas = query_database(db_path, "SELECT COUNT(*) as count FROM personas")
-            result["stats"]["total_personas"] = personas[0]["count"] if personas else 0
+        if "personas" in tables and validate_table_exists(db_path, "personas"):
+            result["stats"]["total_personas"] = safe_count_table(db_path, "personas")
 
     except Exception as e:
         result["error"] = str(e)
@@ -2795,19 +2847,19 @@ def backup_configuration(
     if db_path:
         tables = get_table_names(db_path)
 
-        if include_personas and "personas" in tables:
-            backup_data["personas"] = query_database(db_path, "SELECT * FROM personas")
+        if include_personas and validate_table_exists(db_path, "personas"):
+            backup_data["personas"] = safe_query_table(db_path, "personas", limit=10000)
 
         if include_prompts:
             for t in ["prompts", "prompt_library"]:
-                if t in tables:
-                    backup_data["prompts"] = query_database(db_path, f"SELECT * FROM {t}")
+                if validate_table_exists(db_path, t):
+                    backup_data["prompts"] = safe_query_table(db_path, t, limit=10000)
                     break
 
         if include_tools:
             for t in ["tools", "mcp_tools"]:
-                if t in tables:
-                    backup_data["tools"] = query_database(db_path, f"SELECT * FROM {t}")
+                if validate_table_exists(db_path, t):
+                    backup_data["tools"] = safe_query_table(db_path, t, limit=10000)
                     break
 
     # Get prompt templates from our metrics DB
@@ -2821,7 +2873,8 @@ def backup_configuration(
             cursor.execute("SELECT * FROM prompt_templates")
             backup_data["prompt_templates"] = [dict(row) for row in cursor.fetchall()]
             conn.close()
-        except:
+        except (sqlite3.Error, OSError) as e:
+            logger.debug(f"Could not backup prompt templates: {e}")
             backup_data["prompt_templates"] = []
 
     # Get Claude Desktop config
@@ -2979,7 +3032,7 @@ def get_system_resources() -> str:
         result["disk"]["free_gb"] = round(disk.free / (1024 ** 3), 1)
         result["disk"]["used_gb"] = round(disk.used / (1024 ** 3), 1)
         result["disk"]["percent_used"] = round(disk.percent, 1)
-    except:
+    except (OSError, FileNotFoundError):
         pass
 
     # Recommendations based on resources
@@ -3008,7 +3061,7 @@ def get_system_resources() -> str:
                     "cpu_percent": round(proc.info['cpu_percent'], 1)
                 }
                 break
-        except:
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, KeyError, TypeError):
             pass
 
     return json.dumps(result, indent=2)
@@ -3081,12 +3134,11 @@ def analyse_conversation_patterns(days: int = 30) -> str:
         tables = get_table_names(db_path)
         patterns = {"session_analysis": {}, "model_usage": {}}
         
-        for t in ["chat_sessions", "conversations"]:
-            if t in tables:
-                count_result = query_database(db_path, f"SELECT COUNT(*) as count FROM {t}")
-                patterns["session_analysis"]["total_sessions"] = count_result[0]["count"] if count_result else 0
-                
-                recent = query_database(db_path, f"SELECT * FROM {t} ORDER BY rowid DESC LIMIT 100")
+        for t in ["chat_sessions", "conversations", "chats"]:
+            if validate_table_exists(db_path, t):
+                patterns["session_analysis"]["total_sessions"] = safe_count_table(db_path, t)
+
+                recent = safe_query_table(db_path, t, limit=100)
                 if recent:
                     model_counts = {}
                     for s in recent:
@@ -3230,11 +3282,11 @@ def optimise_knowledge_stacks() -> str:
                 ks_table = t
                 break
         
-        if not ks_table:
+        if not ks_table or not validate_table_exists(db_path, ks_table):
             result["note"] = "No knowledge stack table found"
             return json.dumps(result, indent=2)
-        
-        stacks = query_database(db_path, f"SELECT * FROM {ks_table}")
+
+        stacks = safe_query_table(db_path, ks_table, limit=1000)
         result["analysis"]["total_stacks"] = len(stacks)
         
         if len(stacks) == 0:
@@ -3271,14 +3323,14 @@ def suggest_persona_improvements(persona_name: Optional[str] = None) -> str:
         tables = get_table_names(db_path)
         persona_table = "personas" if "personas" in tables else None
         
-        if not persona_table:
+        if not persona_table or not validate_table_exists(db_path, persona_table):
             result["note"] = "No persona table found"
             return json.dumps(result, indent=2)
-        
+
         if persona_name:
-            personas = query_database(db_path, f"SELECT * FROM {persona_table} WHERE name LIKE ?", (f"%{persona_name}%",))
+            personas = safe_query_table(db_path, persona_table, limit=1000, where_clause="name LIKE ?", params=(f"%{persona_name}%",))
         else:
-            personas = query_database(db_path, f"SELECT * FROM {persona_table}")
+            personas = safe_query_table(db_path, persona_table, limit=1000)
         
         result["analysis"]["total_personas"] = len(personas)
         
@@ -3536,871 +3588,6 @@ def get_calibration_history(
         result["note"] = "No calibration tests found. Run run_calibration_test to generate data."
     
     return json.dumps(result, indent=2, default=str)
-
-
-# =============================================================================
-# Phase 7: Conversation Management
-# =============================================================================
-
-@mcp.tool()
-def export_conversations(
-    format: str = "json",
-    days: Optional[int] = None,
-    include_messages: bool = True,
-    output_path: Optional[str] = None
-) -> str:
-    """
-    Export conversations from Msty database.
-
-    Args:
-        format: Export format ("json", "markdown", "csv")
-        days: Only export conversations from last N days (None = all)
-        include_messages: Include full message content (default: True)
-        output_path: Optional path to save export file
-
-    Returns:
-        Export data or path to exported file
-    """
-    result = {
-        "timestamp": datetime.now().isoformat(),
-        "format": format,
-        "include_messages": include_messages,
-    }
-
-    paths = get_msty_paths()
-    db_path = paths.get("database")
-
-    if not db_path or not Path(db_path).exists():
-        result["error"] = "Database not found"
-        result["suggestion"] = "Use scan_database_locations to find your database"
-        return json.dumps(result, indent=2)
-
-    try:
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-
-        # Get conversations
-        query = "SELECT * FROM chats ORDER BY created_at DESC"
-        if days:
-            from datetime import timedelta
-            cutoff = (datetime.now() - timedelta(days=days)).isoformat()
-            query = f"SELECT * FROM chats WHERE created_at > '{cutoff}' ORDER BY created_at DESC"
-
-        cursor.execute(query)
-        conversations = [dict(row) for row in cursor.fetchall()]
-
-        if include_messages:
-            for conv in conversations:
-                conv_id = conv.get("id")
-                if conv_id:
-                    cursor.execute(
-                        "SELECT * FROM messages WHERE chat_id = ? ORDER BY created_at",
-                        (conv_id,)
-                    )
-                    conv["messages"] = [dict(row) for row in cursor.fetchall()]
-
-        conn.close()
-
-        result["conversation_count"] = len(conversations)
-        result["conversations"] = conversations
-
-        # Format output
-        if format == "markdown":
-            md_output = "# Msty Conversations Export\n\n"
-            for conv in conversations:
-                md_output += f"## {conv.get('title', 'Untitled')}\n"
-                md_output += f"Created: {conv.get('created_at', 'Unknown')}\n\n"
-                if include_messages and conv.get("messages"):
-                    for msg in conv["messages"]:
-                        role = msg.get("role", "unknown").upper()
-                        content = msg.get("content", "")
-                        md_output += f"**{role}**: {content}\n\n"
-                md_output += "---\n\n"
-            result["markdown_output"] = md_output
-
-        if output_path:
-            output_file = Path(output_path)
-            if format == "json":
-                with open(output_file, "w") as f:
-                    json.dump(conversations, f, indent=2, default=str)
-            elif format == "markdown":
-                with open(output_file, "w") as f:
-                    f.write(result.get("markdown_output", ""))
-            elif format == "csv":
-                import csv
-                with open(output_file, "w", newline="") as f:
-                    if conversations:
-                        writer = csv.DictWriter(f, fieldnames=conversations[0].keys())
-                        writer.writeheader()
-                        writer.writerows([{k: v for k, v in c.items() if k != "messages"} for c in conversations])
-            result["output_file"] = str(output_file)
-            result["file_saved"] = True
-
-    except sqlite3.Error as e:
-        result["error"] = f"Database error: {str(e)}"
-    except Exception as e:
-        result["error"] = f"Export error: {str(e)}"
-
-    return json.dumps(result, indent=2, default=str)
-
-
-@mcp.tool()
-def search_conversations(
-    query: str,
-    search_messages: bool = True,
-    search_titles: bool = True,
-    limit: int = 20
-) -> str:
-    """
-    Search through conversations and messages.
-
-    Args:
-        query: Search query string
-        search_messages: Search in message content (default: True)
-        search_titles: Search in conversation titles (default: True)
-        limit: Maximum results to return (default: 20)
-
-    Returns:
-        Matching conversations with context
-    """
-    result = {
-        "timestamp": datetime.now().isoformat(),
-        "query": query,
-        "matches": [],
-    }
-
-    paths = get_msty_paths()
-    db_path = paths.get("database")
-
-    if not db_path or not Path(db_path).exists():
-        result["error"] = "Database not found"
-        return json.dumps(result, indent=2)
-
-    try:
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-
-        matches = []
-        search_term = f"%{query}%"
-
-        if search_titles:
-            cursor.execute(
-                "SELECT id, title, created_at, updated_at FROM chats WHERE title LIKE ? LIMIT ?",
-                (search_term, limit)
-            )
-            for row in cursor.fetchall():
-                matches.append({
-                    "type": "title_match",
-                    "conversation_id": row["id"],
-                    "title": row["title"],
-                    "created_at": row["created_at"],
-                    "match_context": row["title"]
-                })
-
-        if search_messages:
-            cursor.execute(
-                """
-                SELECT m.id, m.chat_id, m.role, m.content, m.created_at, c.title
-                FROM messages m
-                LEFT JOIN chats c ON m.chat_id = c.id
-                WHERE m.content LIKE ?
-                LIMIT ?
-                """,
-                (search_term, limit)
-            )
-            for row in cursor.fetchall():
-                content = row["content"] or ""
-                # Extract context around the match
-                lower_content = content.lower()
-                query_lower = query.lower()
-                pos = lower_content.find(query_lower)
-                if pos >= 0:
-                    start = max(0, pos - 50)
-                    end = min(len(content), pos + len(query) + 50)
-                    context = ("..." if start > 0 else "") + content[start:end] + ("..." if end < len(content) else "")
-                else:
-                    context = content[:100] + "..." if len(content) > 100 else content
-
-                matches.append({
-                    "type": "message_match",
-                    "conversation_id": row["chat_id"],
-                    "conversation_title": row["title"],
-                    "message_role": row["role"],
-                    "created_at": row["created_at"],
-                    "match_context": context
-                })
-
-        conn.close()
-
-        result["matches"] = matches[:limit]
-        result["match_count"] = len(matches)
-        result["limited_to"] = limit if len(matches) >= limit else None
-
-    except sqlite3.Error as e:
-        result["error"] = f"Database error: {str(e)}"
-
-    return json.dumps(result, indent=2, default=str)
-
-
-@mcp.tool()
-def get_conversation_stats(days: int = 30) -> str:
-    """
-    Get conversation statistics and usage patterns.
-
-    Args:
-        days: Number of days to analyze (default: 30)
-
-    Returns:
-        Statistics including message counts, activity patterns, model usage
-    """
-    result = {
-        "timestamp": datetime.now().isoformat(),
-        "period_days": days,
-        "statistics": {},
-    }
-
-    paths = get_msty_paths()
-    db_path = paths.get("database")
-
-    if not db_path or not Path(db_path).exists():
-        result["error"] = "Database not found"
-        return json.dumps(result, indent=2)
-
-    try:
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-
-        from datetime import timedelta
-        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
-
-        # Total conversations
-        cursor.execute("SELECT COUNT(*) FROM chats WHERE created_at > ?", (cutoff,))
-        total_convs = cursor.fetchone()[0]
-
-        # Total messages
-        cursor.execute(
-            "SELECT COUNT(*) FROM messages WHERE created_at > ?",
-            (cutoff,)
-        )
-        total_msgs = cursor.fetchone()[0]
-
-        # Messages by role
-        cursor.execute(
-            """
-            SELECT role, COUNT(*) as count
-            FROM messages
-            WHERE created_at > ?
-            GROUP BY role
-            """,
-            (cutoff,)
-        )
-        msgs_by_role = {row["role"]: row["count"] for row in cursor.fetchall()}
-
-        # Average messages per conversation
-        avg_msgs = total_msgs / total_convs if total_convs > 0 else 0
-
-        # Activity by day of week
-        cursor.execute(
-            """
-            SELECT strftime('%w', created_at) as day, COUNT(*) as count
-            FROM messages
-            WHERE created_at > ?
-            GROUP BY day
-            ORDER BY day
-            """,
-            (cutoff,)
-        )
-        days_map = {0: "Sun", 1: "Mon", 2: "Tue", 3: "Wed", 4: "Thu", 5: "Fri", 6: "Sat"}
-        activity_by_day = {days_map.get(int(row["day"]), row["day"]): row["count"] for row in cursor.fetchall()}
-
-        # Recent conversations
-        cursor.execute(
-            """
-            SELECT id, title, created_at
-            FROM chats
-            WHERE created_at > ?
-            ORDER BY created_at DESC
-            LIMIT 10
-            """,
-            (cutoff,)
-        )
-        recent_convs = [dict(row) for row in cursor.fetchall()]
-
-        conn.close()
-
-        result["statistics"] = {
-            "total_conversations": total_convs,
-            "total_messages": total_msgs,
-            "messages_by_role": msgs_by_role,
-            "average_messages_per_conversation": round(avg_msgs, 1),
-            "activity_by_day_of_week": activity_by_day,
-            "recent_conversations": recent_convs,
-        }
-
-    except sqlite3.Error as e:
-        result["error"] = f"Database error: {str(e)}"
-
-    return json.dumps(result, indent=2, default=str)
-
-
-# =============================================================================
-# Phase 8: Prompt Templates & Automation
-# =============================================================================
-
-# In-memory prompt template storage
-_prompt_templates: Dict[str, Dict[str, Any]] = {}
-
-@mcp.tool()
-def create_prompt_template(
-    name: str,
-    template: str,
-    description: str = "",
-    variables: Optional[List[str]] = None,
-    category: str = "general"
-) -> str:
-    """
-    Create a reusable prompt template.
-
-    Args:
-        name: Unique template name
-        template: Template string with {{variable}} placeholders
-        description: Optional description of the template
-        variables: List of variable names (auto-detected if not provided)
-        category: Template category for organization
-
-    Returns:
-        Created template details
-    """
-    import re
-
-    # Auto-detect variables if not provided
-    if variables is None:
-        variables = list(set(re.findall(r'\{\{(\w+)\}\}', template)))
-
-    template_data = {
-        "name": name,
-        "template": template,
-        "description": description,
-        "variables": variables,
-        "category": category,
-        "created_at": datetime.now().isoformat(),
-        "usage_count": 0
-    }
-
-    _prompt_templates[name] = template_data
-
-    return json.dumps({
-        "timestamp": datetime.now().isoformat(),
-        "status": "Template created successfully",
-        "template": template_data
-    }, indent=2)
-
-
-@mcp.tool()
-def list_prompt_templates(category: Optional[str] = None) -> str:
-    """
-    List all available prompt templates.
-
-    Args:
-        category: Filter by category (optional)
-
-    Returns:
-        List of templates with their details
-    """
-    templates = list(_prompt_templates.values())
-
-    if category:
-        templates = [t for t in templates if t.get("category") == category]
-
-    # Add some built-in templates if none exist
-    if not _prompt_templates:
-        built_in = [
-            {
-                "name": "code_review",
-                "template": "Review this {{language}} code for bugs, security issues, and improvements:\n\n```{{language}}\n{{code}}\n```",
-                "description": "Code review template",
-                "variables": ["language", "code"],
-                "category": "coding",
-                "built_in": True
-            },
-            {
-                "name": "summarize",
-                "template": "Summarize the following {{content_type}} in {{length}} words or less:\n\n{{content}}",
-                "description": "Content summarization template",
-                "variables": ["content_type", "length", "content"],
-                "category": "writing",
-                "built_in": True
-            },
-            {
-                "name": "explain",
-                "template": "Explain {{topic}} to someone with {{expertise_level}} expertise in {{field}}.",
-                "description": "Explanation template",
-                "variables": ["topic", "expertise_level", "field"],
-                "category": "general",
-                "built_in": True
-            }
-        ]
-        templates.extend(built_in)
-
-    return json.dumps({
-        "timestamp": datetime.now().isoformat(),
-        "template_count": len(templates),
-        "templates": templates,
-        "categories": list(set(t.get("category", "general") for t in templates))
-    }, indent=2)
-
-
-@mcp.tool()
-def run_prompt_template(
-    template_name: str,
-    variables: Dict[str, str],
-    model_id: Optional[str] = None
-) -> str:
-    """
-    Run a prompt template with provided variables.
-
-    Args:
-        template_name: Name of the template to use
-        variables: Dictionary of variable values
-        model_id: Model to use (optional, uses first available if not specified)
-
-    Returns:
-        Generated response from the model
-    """
-    import re
-
-    result = {
-        "timestamp": datetime.now().isoformat(),
-        "template_name": template_name,
-    }
-
-    # Find template
-    template_data = _prompt_templates.get(template_name)
-
-    # Check built-in templates
-    if not template_data:
-        built_ins = {
-            "code_review": "Review this {{language}} code for bugs, security issues, and improvements:\n\n```{{language}}\n{{code}}\n```",
-            "summarize": "Summarize the following {{content_type}} in {{length}} words or less:\n\n{{content}}",
-            "explain": "Explain {{topic}} to someone with {{expertise_level}} expertise in {{field}}."
-        }
-        if template_name in built_ins:
-            template_data = {"template": built_ins[template_name], "variables": list(re.findall(r'\{\{(\w+)\}\}', built_ins[template_name]))}
-
-    if not template_data:
-        result["error"] = f"Template '{template_name}' not found"
-        result["available_templates"] = list(_prompt_templates.keys()) + ["code_review", "summarize", "explain"]
-        return json.dumps(result, indent=2)
-
-    # Substitute variables
-    prompt = template_data["template"]
-    for var_name, var_value in variables.items():
-        prompt = prompt.replace(f"{{{{{var_name}}}}}", str(var_value))
-
-    # Check for missing variables
-    missing = re.findall(r'\{\{(\w+)\}\}', prompt)
-    if missing:
-        result["error"] = f"Missing variables: {missing}"
-        result["required_variables"] = template_data.get("variables", [])
-        return json.dumps(result, indent=2)
-
-    result["generated_prompt"] = prompt
-
-    # Get model
-    if not model_id:
-        model_id, _ = get_first_chat_model()
-        if not model_id:
-            result["error"] = "No chat model available"
-            return json.dumps(result, indent=2)
-
-    result["model_id"] = model_id
-
-    # Run the prompt
-    port = get_chat_port_for_model(model_id)
-    start_time = time.time()
-
-    response = make_api_request(
-        "/v1/chat/completions",
-        port=port,
-        method="POST",
-        data={
-            "model": model_id,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.7,
-            "max_tokens": 1024
-        },
-        timeout=60
-    )
-
-    elapsed = time.time() - start_time
-
-    if response.get("success"):
-        data = response.get("data", {})
-        choices = data.get("choices", [])
-        if choices:
-            result["response"] = choices[0].get("message", {}).get("content", "")
-            result["usage"] = data.get("usage", {})
-            result["latency_seconds"] = round(elapsed, 2)
-
-            # Update usage count
-            if template_name in _prompt_templates:
-                _prompt_templates[template_name]["usage_count"] += 1
-    else:
-        result["error"] = response.get("error")
-
-    return json.dumps(result, indent=2)
-
-
-@mcp.tool()
-def smart_model_router(
-    task_description: str,
-    prefer_speed: bool = False,
-    prefer_quality: bool = False
-) -> str:
-    """
-    Intelligently select the best model for a task.
-
-    Args:
-        task_description: Description of the task to perform
-        prefer_speed: Prefer faster models over quality
-        prefer_quality: Prefer quality over speed
-
-    Returns:
-        Recommended model with reasoning
-    """
-    result = {
-        "timestamp": datetime.now().isoformat(),
-        "task_description": task_description,
-        "preferences": {
-            "speed": prefer_speed,
-            "quality": prefer_quality
-        }
-    }
-
-    # Analyze task to determine required capabilities
-    task_lower = task_description.lower()
-    required_tags = []
-
-    # Detect task type
-    if any(word in task_lower for word in ["code", "program", "function", "bug", "debug", "script"]):
-        required_tags.append("coding")
-    if any(word in task_lower for word in ["reason", "logic", "analyze", "think", "problem", "solve"]):
-        required_tags.append("reasoning")
-    if any(word in task_lower for word in ["write", "story", "creative", "poem", "article"]):
-        required_tags.append("creative")
-    if any(word in task_lower for word in ["quick", "fast", "simple", "brief", "short"]):
-        required_tags.append("fast")
-    if any(word in task_lower for word in ["complex", "detailed", "thorough", "comprehensive"]):
-        required_tags.append("quality")
-
-    # Apply preferences
-    if prefer_speed and "fast" not in required_tags:
-        required_tags.append("fast")
-    if prefer_quality and "quality" not in required_tags:
-        required_tags.append("quality")
-
-    result["detected_requirements"] = required_tags
-
-    # Get available models
-    services = get_available_service_ports()
-    available_models = []
-
-    for service_name, service_info in services.items():
-        if service_info["available"]:
-            response = make_api_request("/v1/models", port=service_info["port"])
-            if response.get("success"):
-                data = response.get("data", {})
-                if isinstance(data, dict) and "data" in data:
-                    for model in data["data"]:
-                        model_id = model.get("id", "")
-                        # Skip embedding models
-                        if not any(x in model_id.lower() for x in ["embed", "bge", "nomic"]):
-                            tags = get_model_tags(model_id)
-                            score = sum(1 for tag in required_tags if tag in tags)
-                            available_models.append({
-                                "model_id": model_id,
-                                "service": service_name,
-                                "port": service_info["port"],
-                                "tags": tags,
-                                "match_score": score
-                            })
-
-    if not available_models:
-        result["error"] = "No chat models available"
-        return json.dumps(result, indent=2)
-
-    # Sort by match score
-    available_models.sort(key=lambda x: x["match_score"], reverse=True)
-
-    # Select best model
-    best = available_models[0]
-    result["recommended_model"] = {
-        "model_id": best["model_id"],
-        "service": best["service"],
-        "port": best["port"],
-        "tags": best["tags"],
-        "match_score": best["match_score"],
-        "reasoning": f"Selected based on matching {best['match_score']} of {len(required_tags)} required capabilities"
-    }
-
-    result["alternatives"] = available_models[1:4] if len(available_models) > 1 else []
-
-    return json.dumps(result, indent=2)
-
-
-# =============================================================================
-# Phase 9: Backup & System Management
-# =============================================================================
-
-@mcp.tool()
-def backup_configuration(
-    backup_path: Optional[str] = None,
-    include_personas: bool = True,
-    include_prompts: bool = True,
-    include_tools: bool = True
-) -> str:
-    """
-    Backup Msty configuration to a file.
-
-    Args:
-        backup_path: Path to save backup (default: ~/.msty-admin/backups/)
-        include_personas: Include persona configurations
-        include_prompts: Include saved prompts
-        include_tools: Include MCP tool configurations
-
-    Returns:
-        Backup file path and contents summary
-    """
-    result = {
-        "timestamp": datetime.now().isoformat(),
-        "backup_contents": {},
-    }
-
-    backup_data = {
-        "backup_version": "1.0",
-        "created_at": datetime.now().isoformat(),
-        "msty_admin_version": SERVER_VERSION,
-    }
-
-    paths = get_msty_paths()
-    db_path = paths.get("database")
-
-    if db_path and Path(db_path).exists():
-        try:
-            conn = sqlite3.connect(db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            if include_personas:
-                cursor.execute("SELECT * FROM personas")
-                personas = [dict(row) for row in cursor.fetchall()]
-                backup_data["personas"] = personas
-                result["backup_contents"]["personas"] = len(personas)
-
-            if include_prompts:
-                cursor.execute("SELECT * FROM prompts")
-                prompts = [dict(row) for row in cursor.fetchall()]
-                backup_data["prompts"] = prompts
-                result["backup_contents"]["prompts"] = len(prompts)
-
-            if include_tools:
-                cursor.execute("SELECT * FROM mcp_tools")
-                tools = [dict(row) for row in cursor.fetchall()]
-                backup_data["mcp_tools"] = tools
-                result["backup_contents"]["mcp_tools"] = len(tools)
-
-            conn.close()
-        except sqlite3.Error as e:
-            result["database_error"] = str(e)
-
-    # Also backup prompt templates
-    backup_data["prompt_templates"] = list(_prompt_templates.values())
-    result["backup_contents"]["prompt_templates"] = len(_prompt_templates)
-
-    # Save backup
-    if backup_path:
-        backup_file = Path(backup_path)
-    else:
-        backup_dir = Path.home() / ".msty-admin" / "backups"
-        backup_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_file = backup_dir / f"msty_backup_{timestamp}.json"
-
-    with open(backup_file, "w") as f:
-        json.dump(backup_data, f, indent=2, default=str)
-
-    result["backup_file"] = str(backup_file)
-    result["backup_size_bytes"] = backup_file.stat().st_size
-    result["status"] = "Backup completed successfully"
-
-    return json.dumps(result, indent=2)
-
-
-@mcp.tool()
-def restore_configuration(
-    backup_path: str,
-    restore_personas: bool = True,
-    restore_prompts: bool = True,
-    restore_tools: bool = True,
-    dry_run: bool = True
-) -> str:
-    """
-    Restore Msty configuration from a backup file.
-
-    Args:
-        backup_path: Path to backup file
-        restore_personas: Restore persona configurations
-        restore_prompts: Restore saved prompts
-        restore_tools: Restore MCP tool configurations
-        dry_run: Preview changes without applying (default: True)
-
-    Returns:
-        Restore preview or result
-    """
-    result = {
-        "timestamp": datetime.now().isoformat(),
-        "backup_path": backup_path,
-        "dry_run": dry_run,
-        "restore_preview": {},
-    }
-
-    backup_file = Path(backup_path)
-    if not backup_file.exists():
-        result["error"] = f"Backup file not found: {backup_path}"
-        return json.dumps(result, indent=2)
-
-    try:
-        with open(backup_file) as f:
-            backup_data = json.load(f)
-    except json.JSONDecodeError as e:
-        result["error"] = f"Invalid backup file: {str(e)}"
-        return json.dumps(result, indent=2)
-
-    result["backup_info"] = {
-        "version": backup_data.get("backup_version"),
-        "created_at": backup_data.get("created_at"),
-        "msty_admin_version": backup_data.get("msty_admin_version"),
-    }
-
-    # Preview what would be restored
-    if restore_personas and "personas" in backup_data:
-        result["restore_preview"]["personas"] = len(backup_data["personas"])
-    if restore_prompts and "prompts" in backup_data:
-        result["restore_preview"]["prompts"] = len(backup_data["prompts"])
-    if restore_tools and "mcp_tools" in backup_data:
-        result["restore_preview"]["mcp_tools"] = len(backup_data["mcp_tools"])
-    if "prompt_templates" in backup_data:
-        result["restore_preview"]["prompt_templates"] = len(backup_data["prompt_templates"])
-
-    if dry_run:
-        result["status"] = "Dry run complete - no changes made"
-        result["note"] = "Set dry_run=False to apply the restore"
-        return json.dumps(result, indent=2)
-
-    # Actually restore
-    paths = get_msty_paths()
-    db_path = paths.get("database")
-    restored = {}
-
-    if db_path and Path(db_path).exists():
-        try:
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-
-            # Note: In production, you'd want proper INSERT OR REPLACE logic
-            # This is a simplified version
-            result["warning"] = "Database restore not fully implemented - only prompt templates restored"
-
-            conn.close()
-        except sqlite3.Error as e:
-            result["database_error"] = str(e)
-
-    # Restore prompt templates (these are in memory)
-    if "prompt_templates" in backup_data:
-        for template in backup_data["prompt_templates"]:
-            name = template.get("name")
-            if name:
-                _prompt_templates[name] = template
-        restored["prompt_templates"] = len(backup_data["prompt_templates"])
-
-    result["restored"] = restored
-    result["status"] = "Restore completed (partial - see warnings)"
-
-    return json.dumps(result, indent=2)
-
-
-@mcp.tool()
-def get_system_resources() -> str:
-    """
-    Get current system resource usage.
-
-    Returns:
-        CPU, memory, disk usage and available resources
-    """
-    result = {
-        "timestamp": datetime.now().isoformat(),
-        "system": {},
-        "resources": {},
-    }
-
-    # System info
-    result["system"] = {
-        "platform": platform.system(),
-        "platform_release": platform.release(),
-        "platform_version": platform.version(),
-        "architecture": platform.machine(),
-        "processor": platform.processor(),
-        "python_version": platform.python_version(),
-    }
-
-    # CPU
-    result["resources"]["cpu"] = {
-        "physical_cores": psutil.cpu_count(logical=False),
-        "logical_cores": psutil.cpu_count(logical=True),
-        "current_usage_percent": psutil.cpu_percent(interval=0.1),
-        "per_cpu_percent": psutil.cpu_percent(interval=0.1, percpu=True),
-    }
-
-    # Memory
-    mem = psutil.virtual_memory()
-    result["resources"]["memory"] = {
-        "total_gb": round(mem.total / (1024**3), 2),
-        "available_gb": round(mem.available / (1024**3), 2),
-        "used_gb": round(mem.used / (1024**3), 2),
-        "percent_used": mem.percent,
-    }
-
-    # Disk
-    disk = psutil.disk_usage("/")
-    result["resources"]["disk"] = {
-        "total_gb": round(disk.total / (1024**3), 2),
-        "free_gb": round(disk.free / (1024**3), 2),
-        "used_gb": round(disk.used / (1024**3), 2),
-        "percent_used": disk.percent,
-    }
-
-    # Model recommendations based on available resources
-    available_ram = mem.available / (1024**3)
-    recommendations = []
-
-    if available_ram >= 32:
-        recommendations.append("Can run large models (70B+ parameters)")
-    elif available_ram >= 16:
-        recommendations.append("Can run medium models (13B-34B parameters)")
-    elif available_ram >= 8:
-        recommendations.append("Can run small models (7B-8B parameters)")
-    else:
-        recommendations.append("Limited to tiny models (3B or smaller)")
-
-    if platform.system() == "Darwin" and platform.machine() == "arm64":
-        recommendations.append("Apple Silicon detected - MLX models recommended for best performance")
-
-    result["model_recommendations"] = recommendations
-
-    return json.dumps(result, indent=2)
 
 
 # =============================================================================

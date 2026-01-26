@@ -5,6 +5,27 @@ All notable changes to Msty Admin MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.2.0] - 2026-01-26
+
+### Fixed
+- **SQL Injection Protection** - Added comprehensive protection against SQL injection attacks
+  - `ALLOWED_TABLE_NAMES` frozenset with safe table names
+  - `is_safe_table_name()` function validates tables against allowlist
+  - `validate_table_exists()` verifies table exists AND is safe to query
+  - `safe_query_table()` and `safe_count_table()` helper functions
+  - All database operations now use parameterized queries
+- **Removed all bare `except:` clauses** - Now use specific exception types:
+  - `sqlite3.Error` for database operations
+  - `OSError`, `PermissionError` for file operations
+  - `psutil.NoSuchProcess`, `psutil.AccessDenied` for process operations
+  - `urllib.error.URLError`, `urllib.error.HTTPError` for network operations
+- **Fixed shell script portability** - `run_msty_server.sh` now uses `SCRIPT_DIR` instead of hardcoded path
+- **Removed duplicate function definitions** - Eliminated 6 duplicate Phase 7/8/9 tool functions
+
+### Changed
+- Server version bumped to 6.2.0
+- All 42 tools now unique (was incorrectly counting duplicates)
+
 ## [6.1.0] - 2026-01-26
 
 ### Added
