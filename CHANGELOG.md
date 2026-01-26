@@ -5,6 +5,24 @@ All notable changes to Msty Admin MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.5.0] - 2026-01-26
+
+### Added
+- **Complete Modular Architecture** - Extracted all utility functions into dedicated modules
+  - `src/paths.py` - Path resolution utilities (get_msty_paths, sanitize_path, expand_path, read_claude_desktop_config)
+  - `src/database.py` - Database utilities with SQL injection protection (safe_query_table, safe_count_table, validate_table_exists)
+  - `src/network.py` - API request helpers (make_api_request, is_process_running, is_local_ai_available, get_available_service_ports)
+  - `src/cache.py` - Response caching (ResponseCache class, get_cached_models, cache_models, get_cache)
+  - `src/tagging.py` - Model tagging system (MODEL_TAGS, get_model_tags, find_models_by_tag)
+- All modules have proper `__all__` exports for clean imports
+- Updated `src/__init__.py` with exports for all new modules
+
+### Changed
+- Server.py reduced from 3575 to ~3045 lines (~15% total reduction from v6.0.0)
+- Improved separation of concerns - each module has a single responsibility
+- Better testability - utility functions can now be unit tested independently
+- Cleaner imports - server.py now imports from dedicated modules
+
 ## [6.4.0] - 2026-01-26
 
 ### Added
