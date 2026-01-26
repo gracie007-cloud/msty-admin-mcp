@@ -5,6 +5,30 @@ All notable changes to Msty Admin MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.0] - 2026-01-26
+
+### Added
+- **Model Tagging System** - Smart model categorization for intelligent selection
+  - `list_model_tags` - View tags for all models or specific model
+  - `find_model_by_tag` - Find models by capability (fast, quality, coding, creative, reasoning, etc.)
+  - Auto-tagging based on model name patterns (size, purpose, capabilities)
+  - Manual overrides for specific models
+- **Response Caching** - Reduce redundant API calls
+  - `get_cache_stats` - View cache statistics
+  - `clear_cache` - Force fresh data fetch
+  - Configurable TTL (default 30 seconds)
+- **Enhanced Database Detection** - Better support for Msty 2.4.0+ database locations
+  - `scan_database_locations` - Find all database files on system
+  - Glob pattern search for database files
+  - Container/sandbox app support
+  - Environment variable override: `MSTY_DATABASE_PATH`
+- **4 New Tools** bringing total to 28
+
+### Changed
+- `get_server_status` now includes cache stats and database type info
+- `get_msty_paths` enhanced with multiple database search strategies
+- Server status shows "Phase 5+ - Enhanced"
+
 ## [5.0.1] - 2026-01-26
 
 ### Fixed
@@ -154,6 +178,7 @@ If upgrading from v4.x:
 
 | Version | Date | Phase | Tools |
 |---------|------|-------|-------|
+| 5.1.0 | 2026-01-26 | Tagging + Caching | 28 |
 | 5.0.1 | 2026-01-26 | Bugfix | 24 |
 | 5.0.0 | 2026-01-25 | Msty 2.4.0+ | 24 |
 | 4.1.0 | 2025-12-30 | Enhancement | 24 |
@@ -163,6 +188,7 @@ If upgrading from v4.x:
 | 2.0.0 | 2025-12-25 | Phase 2 | 10 |
 | 1.0.0 | 2025-12-24 | Phase 1 | 6 |
 
+[5.1.0]: https://github.com/DRVBSS/msty-admin-mcp/compare/v5.0.1...v5.1.0
 [5.0.1]: https://github.com/DRVBSS/msty-admin-mcp/compare/v5.0.0...v5.0.1
 [5.0.0]: https://github.com/DRVBSS/msty-admin-mcp/compare/v4.1.0...v5.0.0
 [4.1.0]: https://github.com/M-Pineapple/msty-admin-mcp/compare/v4.0.1...v4.1.0

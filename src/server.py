@@ -86,7 +86,7 @@ mcp = FastMCP("msty-admin")
 # Constants
 # =============================================================================
 
-SERVER_VERSION = "5.0.1"
+SERVER_VERSION = "5.1.0"
 
 # Configurable via environment variables
 SIDECAR_HOST = os.environ.get("MSTY_SIDECAR_HOST", "127.0.0.1")
@@ -165,36 +165,240 @@ class PersonaConfig:
 def get_msty_paths() -> dict:
     """Get all relevant Msty Studio paths for macOS"""
     home = Path.home()
-    
+
     paths = {
         "app": Path("/Applications/MstyStudio.app"),
         "app_alt": Path("/Applications/Msty Studio.app"),
         "data": home / "Library/Application Support/MstyStudio",
         "sidecar": home / "Library/Application Support/MstySidecar",
     }
-    
+
     resolved = {}
     for key, path in paths.items():
         resolved[key] = str(path) if path.exists() else None
-    
+
+    # Enhanced database detection for Msty 2.4.0+
     resolved["database"] = None
-    if resolved["sidecar"]:
+    resolved["database_type"] = None
+
+    # Check environment variable override first
+    env_db_path = os.environ.get("MSTY_DATABASE_PATH")
+    if env_db_path and Path(env_db_path).exists():
+        resolved["database"] = env_db_path
+        resolved["database_type"] = "env_override"
+
+    # Check old Sidecar path
+    if not resolved["database"] and resolved["sidecar"]:
         sidecar_db = Path(resolved["sidecar"]) / "SharedStorage"
         if sidecar_db.exists():
             resolved["database"] = str(sidecar_db)
-    
+            resolved["database_type"] = "sidecar_shared"
+
+    # Search for database files in data directory (Msty 2.4.0+)
     if not resolved["database"] and resolved["data"]:
-        data_db = Path(resolved["data"]) / "msty.db"
-        if data_db.exists():
-            resolved["database"] = str(data_db)
-    
+        data_path = Path(resolved["data"])
+
+        # Common database file patterns for Msty 2.4.0+
+        db_patterns = [
+            "msty.db",
+            "msty.sqlite",
+            "msty.sqlite3",
+            "data.db",
+            "app.db",
+            "storage.db",
+            "MstyStudio.db",
+            "*.db",
+            "**/*.db",
+            "databases/*.db",
+            "db/*.db",
+            "storage/*.db",
+        ]
+
+        for pattern in db_patterns:
+            if "*" in pattern:
+                # Glob pattern
+                matches = list(data_path.glob(pattern))
+                if matches:
+                    # Prefer larger files (more likely to be the main database)
+                    matches.sort(key=lambda p: p.stat().st_size, reverse=True)
+                    resolved["database"] = str(matches[0])
+                    resolved["database_type"] = f"glob:{pattern}"
+                    resolved["all_databases"] = [str(m) for m in matches[:5]]
+                    break
+            else:
+                # Exact path
+                db_file = data_path / pattern
+                if db_file.exists():
+                    resolved["database"] = str(db_file)
+                    resolved["database_type"] = "direct"
+                    break
+
+    # Also check for SQLite files in Containers (sandboxed apps)
+    if not resolved["database"]:
+        containers_path = home / "Library/Containers/ai.msty.MstyStudio/Data/Library/Application Support"
+        if containers_path.exists():
+            for db_file in containers_path.glob("**/*.db"):
+                resolved["database"] = str(db_file)
+                resolved["database_type"] = "container"
+                break
+
     if resolved["data"]:
         mlx_path = Path(resolved["data"]) / "models-mlx"
         resolved["mlx_models"] = str(mlx_path) if mlx_path.exists() else None
     else:
         resolved["mlx_models"] = None
-    
+
     return resolved
+
+
+# =============================================================================
+# Response Caching
+# =============================================================================
+
+class ResponseCache:
+    """Simple TTL cache for API responses"""
+
+    def __init__(self, default_ttl: int = 30):
+        self._cache: Dict[str, tuple] = {}  # key -> (value, expiry_time)
+        self._default_ttl = default_ttl
+
+    def get(self, key: str) -> Optional[Any]:
+        """Get cached value if not expired"""
+        if key in self._cache:
+            value, expiry = self._cache[key]
+            if time.time() < expiry:
+                return value
+            else:
+                del self._cache[key]
+        return None
+
+    def set(self, key: str, value: Any, ttl: int = None) -> None:
+        """Cache a value with TTL"""
+        ttl = ttl or self._default_ttl
+        self._cache[key] = (value, time.time() + ttl)
+
+    def invalidate(self, key: str = None) -> None:
+        """Clear specific key or entire cache"""
+        if key:
+            self._cache.pop(key, None)
+        else:
+            self._cache.clear()
+
+    def stats(self) -> dict:
+        """Get cache statistics"""
+        now = time.time()
+        valid = sum(1 for _, (_, exp) in self._cache.items() if exp > now)
+        return {"total_entries": len(self._cache), "valid_entries": valid}
+
+
+# Global cache instance
+_response_cache = ResponseCache(default_ttl=30)
+
+
+def get_cached_models() -> Optional[dict]:
+    """Get cached model list"""
+    return _response_cache.get("models_list")
+
+
+def cache_models(models_data: dict, ttl: int = 60) -> None:
+    """Cache model list for TTL seconds"""
+    _response_cache.set("models_list", models_data, ttl)
+
+
+# =============================================================================
+# Model Tagging System
+# =============================================================================
+
+# Model tags based on known model characteristics
+MODEL_TAGS = {
+    # By name patterns
+    "patterns": {
+        "fast": ["granite", "phi", "gemma-2b", "qwen.*0.6b", "qwen.*1.5b", "tiny", "small", "mini"],
+        "quality": ["70b", "72b", "405b", "235b", "253b", "120b", "opus", "sonnet"],
+        "coding": ["coder", "codex", "deepseek-coder", "starcoder", "code"],
+        "creative": ["creative", "writer", "story", "hermes", "nous"],
+        "reasoning": ["r1", "thinking", "reason", "o1", "deepseek-r1"],
+        "embedding": ["embed", "bge", "nomic", "e5", "gte"],
+        "vision": ["vision", "llava", "image", "visual"],
+        "long_context": ["longcat", "yarn", "longrope"],
+    },
+    # Manual overrides for specific models
+    "overrides": {
+        "mlx-community/granite-3.3-2b-instruct-4bit": ["fast", "general"],
+        "mlx-community/Qwen3-32B-MLX-4bit": ["quality", "general", "reasoning"],
+        "GGorman/DeepSeek-Coder-V2-Instruct-Q4-mlx": ["coding", "quality"],
+    }
+}
+
+
+def get_model_tags(model_id: str) -> List[str]:
+    """
+    Get tags for a model based on its ID.
+    Tags help with smart model selection.
+    """
+    tags = set()
+    model_lower = model_id.lower()
+
+    # Check manual overrides first
+    if model_id in MODEL_TAGS["overrides"]:
+        return MODEL_TAGS["overrides"][model_id]
+
+    # Check patterns
+    import re
+    for tag, patterns in MODEL_TAGS["patterns"].items():
+        for pattern in patterns:
+            if re.search(pattern, model_lower):
+                tags.add(tag)
+                break
+
+    # Add size-based tags
+    if any(size in model_lower for size in ["2b", "3b", "4b", "7b", "8b"]):
+        tags.add("small")
+    elif any(size in model_lower for size in ["13b", "14b", "27b", "32b", "34b"]):
+        tags.add("medium")
+    elif any(size in model_lower for size in ["70b", "72b", "120b", "235b", "405b"]):
+        tags.add("large")
+
+    # Default to general if no specific tags
+    if not tags:
+        tags.add("general")
+
+    return list(tags)
+
+
+def find_models_by_tag(tag: str, models: List[dict] = None) -> List[dict]:
+    """
+    Find models matching a specific tag.
+    If models not provided, fetches from cache or API.
+    """
+    if models is None:
+        cached = get_cached_models()
+        if cached:
+            models = cached.get("models", [])
+        else:
+            # Fetch fresh
+            services = get_available_service_ports()
+            models = []
+            for service_name, service_info in services.items():
+                if service_info["available"]:
+                    response = make_api_request("/v1/models", port=service_info["port"])
+                    if response.get("success"):
+                        data = response.get("data", {})
+                        if isinstance(data, dict) and "data" in data:
+                            for m in data["data"]:
+                                m["_service"] = service_name
+                                m["_port"] = service_info["port"]
+                            models.extend(data["data"])
+
+    matching = []
+    for model in models:
+        model_id = model.get("id", "")
+        model_tags = get_model_tags(model_id)
+        if tag in model_tags:
+            model["_tags"] = model_tags
+            matching.append(model)
+
+    return matching
 
 
 def is_process_running(process_name: str) -> bool:
@@ -631,22 +835,25 @@ def get_server_status() -> str:
         "server": {
             "name": "msty-admin-mcp",
             "version": SERVER_VERSION,
-            "phase": "Phase 5 - Tiered AI Workflow",
-            "author": "Pineapple 🍍"
+            "phase": "Phase 5+ - Enhanced",
+            "author": "Pineapple 🍍 + Claude"
         },
         "available_tools": {
-            "phase_1_foundational": ["detect_msty_installation", "read_msty_database", "list_configured_tools", "get_model_providers", "analyse_msty_health", "get_server_status"],
+            "phase_1_foundational": ["detect_msty_installation", "read_msty_database", "list_configured_tools", "get_model_providers", "analyse_msty_health", "get_server_status", "scan_database_locations"],
             "phase_2_configuration": ["export_tool_config", "sync_claude_preferences", "generate_persona", "import_tool_config"],
-            "phase_3_automation": ["get_sidecar_status", "list_available_models", "query_local_ai_service", "chat_with_local_model", "recommend_model"],
+            "phase_3_automation": ["get_sidecar_status", "list_available_models", "query_local_ai_service", "chat_with_local_model", "recommend_model", "list_model_tags", "find_model_by_tag"],
+            "phase_3_cache": ["get_cache_stats", "clear_cache"],
             "phase_4_intelligence": ["get_model_performance_metrics", "analyse_conversation_patterns", "compare_model_responses", "optimise_knowledge_stacks", "suggest_persona_improvements"],
             "phase_5_calibration": ["run_calibration_test", "evaluate_response_quality", "identify_handoff_triggers", "get_calibration_history"]
         },
-        "tool_count": 24,
+        "tool_count": 28,
         "msty_status": {
             "installed": paths.get("app") is not None or paths.get("app_alt") is not None,
             "database_available": paths.get("database") is not None,
-            "local_ai_available": is_local_ai_available()  # Msty 2.4.0+ check
-        }
+            "database_type": paths.get("database_type"),
+            "local_ai_available": is_local_ai_available()
+        },
+        "cache_stats": _response_cache.stats()
     }, indent=2)
 
 
@@ -1164,6 +1371,228 @@ def recommend_model(use_case: str = "general", max_size_gb: Optional[float] = No
         recommendations = [m for m in recommendations if m["size_gb"] <= max_size_gb]
     
     return json.dumps({"use_case": use_case, "recommendations": recommendations}, indent=2)
+
+
+@mcp.tool()
+def list_model_tags(model_id: Optional[str] = None) -> str:
+    """
+    Get tags for models to help with smart selection.
+
+    Tags include: fast, quality, coding, creative, reasoning, embedding, vision, long_context, small, medium, large, general
+
+    Args:
+        model_id: Specific model to get tags for (None = all models with their tags)
+
+    Returns:
+        Model tags and available tag categories
+    """
+    result = {
+        "timestamp": datetime.now().isoformat(),
+        "available_tags": list(MODEL_TAGS["patterns"].keys()) + ["small", "medium", "large", "general"],
+    }
+
+    if model_id:
+        tags = get_model_tags(model_id)
+        result["model_id"] = model_id
+        result["tags"] = tags
+    else:
+        # Get all models and their tags
+        services = get_available_service_ports()
+        models_with_tags = []
+
+        for service_name, service_info in services.items():
+            if service_info["available"]:
+                response = make_api_request("/v1/models", port=service_info["port"])
+                if response.get("success"):
+                    data = response.get("data", {})
+                    if isinstance(data, dict) and "data" in data:
+                        for m in data["data"]:
+                            mid = m.get("id", "")
+                            tags = get_model_tags(mid)
+                            models_with_tags.append({
+                                "model_id": mid,
+                                "tags": tags,
+                                "service": service_name,
+                                "port": service_info["port"]
+                            })
+
+        result["models"] = models_with_tags
+        result["model_count"] = len(models_with_tags)
+
+        # Summarize by tag
+        tag_counts = {}
+        for m in models_with_tags:
+            for tag in m["tags"]:
+                tag_counts[tag] = tag_counts.get(tag, 0) + 1
+        result["tag_summary"] = tag_counts
+
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def find_model_by_tag(
+    tag: str,
+    prefer_fast: bool = False,
+    exclude_embedding: bool = True
+) -> str:
+    """
+    Find models matching a specific tag.
+
+    Args:
+        tag: Tag to search for (fast, quality, coding, creative, reasoning, etc.)
+        prefer_fast: If True, sort smaller/faster models first
+        exclude_embedding: If True, exclude embedding models from results
+
+    Returns:
+        List of matching models with their details
+    """
+    result = {"timestamp": datetime.now().isoformat(), "tag": tag, "models": []}
+
+    # Get all models
+    services = get_available_service_ports()
+    all_models = []
+
+    for service_name, service_info in services.items():
+        if service_info["available"]:
+            response = make_api_request("/v1/models", port=service_info["port"])
+            if response.get("success"):
+                data = response.get("data", {})
+                if isinstance(data, dict) and "data" in data:
+                    for m in data["data"]:
+                        m["_service"] = service_name
+                        m["_port"] = service_info["port"]
+                        all_models.append(m)
+
+    # Filter by tag
+    matching = find_models_by_tag(tag, all_models)
+
+    # Optionally exclude embedding models
+    if exclude_embedding:
+        matching = [m for m in matching if "embedding" not in m.get("_tags", [])]
+
+    # Sort if prefer_fast
+    if prefer_fast:
+        # Sort by size indicators in name (smaller first)
+        def size_key(m):
+            mid = m.get("id", "").lower()
+            if any(s in mid for s in ["0.6b", "1b", "2b", "3b"]):
+                return 0
+            if any(s in mid for s in ["4b", "7b", "8b"]):
+                return 1
+            if any(s in mid for s in ["13b", "14b", "27b", "32b"]):
+                return 2
+            return 3
+        matching.sort(key=size_key)
+
+    result["models"] = matching
+    result["match_count"] = len(matching)
+
+    if not matching:
+        result["note"] = f"No models found with tag '{tag}'. Available tags: fast, quality, coding, creative, reasoning, embedding, vision, small, medium, large, general"
+
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def get_cache_stats() -> str:
+    """
+    Get statistics about the response cache.
+
+    Returns cache hit/miss information and current entries.
+    Useful for debugging and performance monitoring.
+    """
+    stats = _response_cache.stats()
+    stats["timestamp"] = datetime.now().isoformat()
+    stats["cache_ttl_seconds"] = _response_cache._default_ttl
+    return json.dumps(stats, indent=2)
+
+
+@mcp.tool()
+def clear_cache() -> str:
+    """
+    Clear the response cache.
+
+    Forces fresh data to be fetched on next request.
+    Useful after model changes or configuration updates.
+    """
+    _response_cache.invalidate()
+    return json.dumps({
+        "timestamp": datetime.now().isoformat(),
+        "status": "Cache cleared successfully",
+        "message": "Next requests will fetch fresh data"
+    }, indent=2)
+
+
+@mcp.tool()
+def scan_database_locations() -> str:
+    """
+    Scan for Msty database files in common locations.
+
+    Useful for debugging when database is not found automatically.
+    Shows all potential database files and their sizes.
+
+    Returns:
+        List of found database files with details
+    """
+    home = Path.home()
+    result = {
+        "timestamp": datetime.now().isoformat(),
+        "scan_locations": [],
+        "found_databases": [],
+        "current_config": get_msty_paths()
+    }
+
+    # Locations to scan
+    scan_paths = [
+        home / "Library/Application Support/MstyStudio",
+        home / "Library/Application Support/MstySidecar",
+        home / "Library/Containers/ai.msty.MstyStudio",
+        home / ".msty",
+        home / ".config/msty",
+    ]
+
+    for scan_path in scan_paths:
+        location_info = {"path": str(scan_path), "exists": scan_path.exists(), "databases": []}
+
+        if scan_path.exists():
+            try:
+                # Find all database files
+                for db_file in scan_path.glob("**/*.db"):
+                    try:
+                        stat = db_file.stat()
+                        location_info["databases"].append({
+                            "path": str(db_file),
+                            "size_mb": round(stat.st_size / (1024 * 1024), 2),
+                            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat()
+                        })
+                        result["found_databases"].append(str(db_file))
+                    except:
+                        pass
+
+                for db_file in scan_path.glob("**/*.sqlite*"):
+                    try:
+                        stat = db_file.stat()
+                        location_info["databases"].append({
+                            "path": str(db_file),
+                            "size_mb": round(stat.st_size / (1024 * 1024), 2),
+                            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat()
+                        })
+                        result["found_databases"].append(str(db_file))
+                    except:
+                        pass
+            except PermissionError:
+                location_info["error"] = "Permission denied"
+
+        result["scan_locations"].append(location_info)
+
+    result["total_databases_found"] = len(result["found_databases"])
+
+    if result["found_databases"]:
+        result["recommendation"] = f"Set MSTY_DATABASE_PATH environment variable to one of the found databases"
+    else:
+        result["recommendation"] = "No databases found. Msty 2.4.0+ may store data differently - check Msty settings or documentation"
+
+    return json.dumps(result, indent=2)
 
 
 # =============================================================================
