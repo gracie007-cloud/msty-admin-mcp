@@ -22,13 +22,15 @@ Phase 15: Conversation Analytics
 
 Total: 77 tools
 
-Created by Pineapple 🍍
+Original author: Pineapple 🍍
+Fork maintainer: DigitalKredit (v5.0.0+)
 """
 
 from .constants import SERVER_VERSION
 
 __version__ = SERVER_VERSION
-__author__ = "Pineapple 🍍"
+__author__ = "DigitalKredit"
+__original_author__ = "Pineapple 🍍"
 
 # Import utility modules (no external dependencies)
 from .models import MstyInstallation, MstyHealthReport, DatabaseStats, PersonaConfig

@@ -72,7 +72,8 @@ Phase 15: Conversation Analytics
 
 Total: 77 tools
 
-Created by Pineapple 🍍 AI Administration System
+Original author: Pineapple 🍍
+Fork maintainer: DigitalKredit (v5.0.0+)
 """
 
 import json
@@ -454,7 +455,7 @@ def get_server_status() -> str:
             "name": "msty-admin-mcp",
             "version": SERVER_VERSION,
             "phase": "Phase 5+ - Enhanced",
-            "author": "Pineapple 🍍 + Claude"
+            "author": "DigitalKredit (fork of Pineapple 🍍)"
         },
         "available_tools": {
             "phase_1_foundational": ["detect_msty_installation", "read_msty_database", "list_configured_tools", "get_model_providers", "analyse_msty_health", "get_server_status", "scan_database_locations"],
