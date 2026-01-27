@@ -16,6 +16,23 @@ An MCP (Model Context Protocol) server that transforms Claude into an intelligen
 
 ---
 
+## About This Fork
+
+👋 **Hey! I'm Dmitri K from [DigitalKredit](https://github.com/DRVBSS).**
+
+I picked up this project when it had **24 tools** designed for an older Msty Studio architecture with a separate "Sidecar" service that no longer exists in Msty 2.4.0+.
+
+**What I did:**
+- 🔧 **Rewrote the codebase** for Msty 2.4.0+ (services now built into main app)
+- 🏗️ **Refactored** into a clean modular architecture (20+ modules)
+- 📈 **Expanded** from 24 tools to **113 fully functional tools**
+- ✅ **Added comprehensive testing** (230+ tests)
+- 🚀 **Built major new features**: PII scrubbing, embedding visualization, health dashboards, real-time web integration, automated maintenance, and more
+
+This fork is actively maintained and tested against Msty Studio 2.4.0+.
+
+---
+
 ## What's New in v8.0.0
 
 ### 36 New Tools Across 10 New Phases
