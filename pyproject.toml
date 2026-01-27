@@ -9,7 +9,7 @@ description = "MCP Server for Msty Studio Desktop 2.4.0+ Administration - Full s
 readme = "README.md"
 license = "MIT"
 authors = [
-    { name = "DBSS", email = "drivebossllc@gmail.com" },
+    { name = "DigitalKredit", email = "drivebossllc@gmail.com" },
     { name = "Pineapple", email = "pineapple@currentventures.co" }
 ]
 keywords = [
@@ -54,10 +54,10 @@ dev = [
 msty-admin-mcp = "src.server:main"
 
 [project.urls]
-Homepage = "https://github.com/DRVBSS/msty-admin-mcp"
-Documentation = "https://github.com/DRVBSS/msty-admin-mcp#readme"
-Repository = "https://github.com/DRVBSS/msty-admin-mcp"
-Issues = "https://github.com/DRVBSS/msty-admin-mcp/issues"
+Homepage = "https://github.com/DBSS/msty-admin-mcp"
+Documentation = "https://github.com/DBSS/msty-admin-mcp#readme"
+Repository = "https://github.com/DBSS/msty-admin-mcp"
+Issues = "https://github.com/DBSS/msty-admin-mcp/issues"
 Upstream = "https://github.com/M-Pineapple/msty-admin-mcp"
 
 [tool.hatch.build.targets.wheel]

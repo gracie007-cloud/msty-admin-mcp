@@ -4,7 +4,7 @@
 
 An MCP (Model Context Protocol) server that transforms Claude into an intelligent system administrator for [Msty Studio Desktop](https://msty.ai). Query databases, manage configurations, orchestrate local AI models, and build tiered AI workflows—all through natural conversation.
 
-[![Version](https://img.shields.io/badge/version-7.0.0-blue.svg)](https://github.com/DRVBSS/msty-admin-mcp/releases)
+[![Version](https://img.shields.io/badge/version-7.0.0-blue.svg)](https://github.com/DBSS/msty-admin-mcp/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10+-yellow.svg)](https://python.org)
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://apple.com)
@@ -92,7 +92,7 @@ Claude handles the rest—querying databases, calling APIs, analysing results, a
 
 ```bash
 # Clone the repository
-git clone https://github.com/DRVBSS/msty-admin-mcp.git
+git clone https://github.com/DBSS/msty-admin-mcp.git
 cd msty-admin-mcp
 
 # Create virtual environment
@@ -482,7 +482,7 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for detailed contribution guideli
 ## Credits
 
 - **Original Author**: [Pineapple](https://github.com/M-Pineapple) - Created the original msty-admin-mcp
-- **v5.0.0+ Fork**: [DBSS](https://github.com/DRVBSS) - Msty 2.4.0+ compatibility, modular architecture
+- **v5.0.0+ Fork**: [DigitalKredit](https://github.com/DBSS) - Msty 2.4.0+ compatibility, modular architecture
 
 ---
 

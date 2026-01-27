@@ -25,7 +25,7 @@ Guide for contributing to Msty Admin MCP.
 
 ```bash
 # Clone the repository
-git clone https://github.com/DRVBSS/msty-admin-mcp.git
+git clone https://github.com/DBSS/msty-admin-mcp.git
 cd msty-admin-mcp
 
 # Create virtual environment
@@ -408,6 +408,6 @@ Solution: Open Msty Studio and enable Local AI service
 
 ## Getting Help
 
-- **Issues**: [GitHub Issues](https://github.com/DRVBSS/msty-admin-mcp/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/DRVBSS/msty-admin-mcp/discussions)
+- **Issues**: [GitHub Issues](https://github.com/DBSS/msty-admin-mcp/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/DBSS/msty-admin-mcp/discussions)
 - **MCP Protocol**: [modelcontextprotocol.io](https://modelcontextprotocol.io)

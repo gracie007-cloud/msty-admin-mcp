@@ -419,11 +419,11 @@ If upgrading from v4.x:
 | 2.0.0 | 2025-12-25 | Phase 2 | 10 |
 | 1.0.0 | 2025-12-24 | Phase 1 | 6 |
 
-[6.0.0]: https://github.com/DRVBSS/msty-admin-mcp/compare/v5.2.0...v6.0.0
-[5.2.0]: https://github.com/DRVBSS/msty-admin-mcp/compare/v5.1.0...v5.2.0
-[5.1.0]: https://github.com/DRVBSS/msty-admin-mcp/compare/v5.0.1...v5.1.0
-[5.0.1]: https://github.com/DRVBSS/msty-admin-mcp/compare/v5.0.0...v5.0.1
-[5.0.0]: https://github.com/DRVBSS/msty-admin-mcp/compare/v4.1.0...v5.0.0
+[6.0.0]: https://github.com/DBSS/msty-admin-mcp/compare/v5.2.0...v6.0.0
+[5.2.0]: https://github.com/DBSS/msty-admin-mcp/compare/v5.1.0...v5.2.0
+[5.1.0]: https://github.com/DBSS/msty-admin-mcp/compare/v5.0.1...v5.1.0
+[5.0.1]: https://github.com/DBSS/msty-admin-mcp/compare/v5.0.0...v5.0.1
+[5.0.0]: https://github.com/DBSS/msty-admin-mcp/compare/v4.1.0...v5.0.0
 [4.1.0]: https://github.com/M-Pineapple/msty-admin-mcp/compare/v4.0.1...v4.1.0
 [4.0.1]: https://github.com/M-Pineapple/msty-admin-mcp/compare/v4.0.0...v4.0.1
 [4.0.0]: https://github.com/M-Pineapple/msty-admin-mcp/compare/v3.0.0...v4.0.0
