@@ -1,5 +1,5 @@
 """
-Msty Admin MCP Server v7.0.0
+Msty Admin MCP Server v8.0.0
 
 AI-administered Msty Studio Desktop management system with database insights,
 configuration management, local model orchestration, and tiered AI workflows.
@@ -19,8 +19,18 @@ Phase 12: Claude ↔ Local Model Bridge
 Phase 13: Turnstile Workflows
 Phase 14: Live Context
 Phase 15: Conversation Analytics
+Phase 16: Shadow Persona Integration
+Phase 17: Workspaces Management
+Phase 18: Real-Time Web/Data Integration
+Phase 19: Chat/Conversation Management
+Phase 20: Folder Organization
+Phase 21: PII Scrubbing Tools
+Phase 22: Embedding Visualization
+Phase 23: Health Monitoring Dashboard
+Phase 24: Configuration Profiles
+Phase 25: Automated Maintenance
 
-Total: 77 tools
+Total: 113 tools
 
 Original author: Pineapple 🍍
 Fork maintainer: DigitalKredit (v5.0.0+)
@@ -76,6 +86,45 @@ from .conversation_analytics import (
     get_conversations, get_messages, analyze_usage_patterns,
     analyze_conversation_content, analyze_model_performance,
     analyze_session_patterns, generate_analytics_report
+)
+
+# Import Phase 16-25 extension modules
+from .shadow_personas import (
+    list_shadow_personas, get_shadow_persona_details,
+    analyze_shadow_conversation, synthesize_shadow_responses,
+    compare_shadow_responses
+)
+from .workspaces import (
+    list_workspaces, get_workspace_details,
+    get_workspace_stats, export_workspace
+)
+from .realtime_data import (
+    realtime_search, realtime_fetch, realtime_youtube_transcript
+)
+from .chat_management import (
+    export_chat_thread, clone_chat, branch_chat, merge_chats
+)
+from .folders import (
+    list_folders, get_folder_details, get_folder_stats,
+    suggest_folder_organization
+)
+from .pii_tools import (
+    scan_for_pii, scrub_pii, generate_pii_report, PII_PATTERNS
+)
+from .embeddings import (
+    get_embeddings_from_stack, visualize_embeddings,
+    cluster_embeddings, compare_embeddings, embedding_statistics
+)
+from .dashboard import (
+    check_service_health, get_dashboard_status, get_active_alerts
+)
+from .profiles import (
+    list_profiles, save_profile, load_profile, compare_profiles,
+    export_profile
+)
+from .maintenance import (
+    identify_cleanup_candidates, perform_cleanup,
+    optimize_database, generate_maintenance_report
 )
 
 # Lazy import for server module (requires mcp package)
@@ -174,4 +223,55 @@ __all__ = [
     "analyze_model_performance",
     "analyze_session_patterns",
     "generate_analytics_report",
+    # Shadow Personas (Phase 16)
+    "list_shadow_personas",
+    "get_shadow_persona_details",
+    "analyze_shadow_conversation",
+    "synthesize_shadow_responses",
+    "compare_shadow_responses",
+    # Workspaces (Phase 17)
+    "list_workspaces",
+    "get_workspace_details",
+    "get_workspace_stats",
+    "export_workspace",
+    # Real-Time Data (Phase 18)
+    "realtime_search",
+    "realtime_fetch",
+    "realtime_youtube_transcript",
+    # Chat Management (Phase 19)
+    "export_chat_thread",
+    "clone_chat",
+    "branch_chat",
+    "merge_chats",
+    # Folders (Phase 20)
+    "list_folders",
+    "get_folder_details",
+    "get_folder_stats",
+    "suggest_folder_organization",
+    # PII Tools (Phase 21)
+    "scan_for_pii",
+    "scrub_pii",
+    "generate_pii_report",
+    "PII_PATTERNS",
+    # Embeddings (Phase 22)
+    "get_embeddings_from_stack",
+    "visualize_embeddings",
+    "cluster_embeddings",
+    "compare_embeddings",
+    "embedding_statistics",
+    # Dashboard (Phase 23)
+    "check_service_health",
+    "get_dashboard_status",
+    "get_active_alerts",
+    # Profiles (Phase 24)
+    "list_profiles",
+    "save_profile",
+    "load_profile",
+    "compare_profiles",
+    "export_profile",
+    # Maintenance (Phase 25)
+    "identify_cleanup_candidates",
+    "perform_cleanup",
+    "optimize_database",
+    "generate_maintenance_report",
 ]

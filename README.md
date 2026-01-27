@@ -4,21 +4,62 @@
 
 An MCP (Model Context Protocol) server that transforms Claude into an intelligent system administrator for [Msty Studio Desktop](https://msty.ai). Query databases, manage configurations, orchestrate local AI models, and build tiered AI workflows—all through natural conversation.
 
-[![Version](https://img.shields.io/badge/version-7.0.0-blue.svg)](https://github.com/DBSS/msty-admin-mcp/releases)
+[![Version](https://img.shields.io/badge/version-8.0.0-blue.svg)](https://github.com/DBSS/msty-admin-mcp/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10+-yellow.svg)](https://python.org)
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://apple.com)
 [![Msty](https://img.shields.io/badge/Msty-2.4.0+-purple.svg)](https://msty.ai)
-[![Tests](https://img.shields.io/badge/tests-92%20passing-brightgreen.svg)](tests/)
-[![Tools](https://img.shields.io/badge/tools-77-orange.svg)](src/)
+[![Tests](https://img.shields.io/badge/tests-130%20passing-brightgreen.svg)](tests/)
+[![Tools](https://img.shields.io/badge/tools-113-orange.svg)](src/)
 
-> **v7.0.0** - Massive expansion with 77 tools including Knowledge Stacks, Model Management, Claude↔Local Bridge, Turnstile Workflows, Live Context, and Conversation Analytics.
+> **v8.0.0** - Ultimate expansion with 113 tools including Shadow Personas, Workspaces, Real-Time Web Integration, Chat Management, PII Scrubbing, Embedding Visualization, Health Dashboard, Configuration Profiles, and Automated Maintenance.
 
 ---
 
-## What's New in v7.0.0
+## What's New in v8.0.0
 
-### 35 New Tools Across 6 New Phases
+### 36 New Tools Across 10 New Phases
+
+| Phase | Tools | Description |
+|-------|-------|-------------|
+| **Phase 16: Shadow Personas** | 5 | Multi-perspective conversation analysis |
+| **Phase 17: Workspaces** | 4 | Workspace management and data isolation |
+| **Phase 18: Real-Time Web** | 3 | Web search, URL fetch, YouTube transcripts |
+| **Phase 19: Chat Management** | 4 | Export, clone, branch, merge conversations |
+| **Phase 20: Folder Organization** | 4 | Conversation folder management |
+| **Phase 21: PII Scrubbing** | 3 | 13 PII patterns, GDPR/HIPAA compliance |
+| **Phase 22: Embedding Visualization** | 4 | Document clustering and similarity |
+| **Phase 23: Health Dashboard** | 3 | Service monitoring and alerts |
+| **Phase 24: Configuration Profiles** | 4 | Save/load/compare configurations |
+| **Phase 25: Automated Maintenance** | 3 | Cleanup, optimization, health scoring |
+
+### New Modules (v8.0.0)
+
+| Module | Purpose |
+|--------|---------|
+| `shadow_personas.py` | Shadow persona integration |
+| `workspaces.py` | Workspace management |
+| `realtime_data.py` | Web/YouTube integration |
+| `chat_management.py` | Chat operations |
+| `folders.py` | Folder organization |
+| `pii_tools.py` | PII detection and scrubbing |
+| `embeddings.py` | Embedding visualization |
+| `dashboard.py` | Health monitoring |
+| `profiles.py` | Configuration profiles |
+| `maintenance.py` | Automated maintenance |
+| `server_extensions_v2.py` | Extension registration v2 |
+
+### Comprehensive Testing
+- **130+ unit tests** covering all modules
+- PII pattern detection validated
+- Cosine similarity mathematical tests
+- Maintenance dry-run verification
+
+---
+
+## What's in v7.0.0
+
+### 35 Tools Across 6 Phases
 
 | Phase | Tools | Description |
 |-------|-------|-------------|
@@ -29,29 +70,11 @@ An MCP (Model Context Protocol) server that transforms Claude into an intelligen
 | **Phase 14: Live Context** | 5 | Real-time system/datetime/Msty context for prompts |
 | **Phase 15: Conversation Analytics** | 5 | Usage patterns, content analysis, session metrics |
 
-### New Modules
-
-| Module | Purpose |
-|--------|---------|
-| `knowledge_stacks.py` | Knowledge Stack management for RAG |
-| `model_management.py` | Model download/delete operations |
-| `model_bridge.py` | Claude↔Local Model orchestration |
-| `turnstiles.py` | Turnstile workflow automation |
-| `live_context.py` | Real-time context providers |
-| `conversation_analytics.py` | Advanced analytics |
-| `server_extensions.py` | Extension tool registration |
-
 ### Enhanced Tagging System v2.0
 - Context length awareness: `long_context` (100K+), `very_long_context` (250K+), `massive_context` (500K+)
 - Quantization detection: `fp16`, `8bit`, `6bit`, `5bit`, `4bit`, `3bit`
 - Architecture tags: `moe`, `mlx`, `gguf`
 - New size tier: `massive` (200B+ parameters)
-
-### Comprehensive Testing
-- **92 unit tests** covering all modules
-- SQL injection protection verified
-- Error handling tested
-- Cache behavior validated
 
 ### Msty 2.4.0+ Service Support
 | Service | Port | Description |
@@ -128,11 +151,11 @@ pip install -r requirements.txt
 
 3. **Restart Claude Desktop** (Cmd+Q, then reopen)
 
-4. You should see "msty-admin" in your available tools with **42 tools** loaded.
+4. You should see "msty-admin" in your available tools with **113 tools** loaded.
 
 ---
 
-## Available Tools (42 Total)
+## Available Tools (113 Total)
 
 ### Phase 1: Installation & Health (7 tools)
 | Tool | Description |

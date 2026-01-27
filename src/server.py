@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Msty Admin MCP Server v7.0.0
+Msty Admin MCP Server v8.0.0
 
 AI-administered Msty Studio Desktop management system with database insights,
 configuration management, hardware optimization, and Claude Desktop sync.
@@ -70,7 +70,40 @@ Phase 15: Conversation Analytics
 - analytics_usage, analytics_content, analytics_models
 - analytics_sessions, analytics_report
 
-Total: 77 tools
+Phase 16: Shadow Persona Integration
+- shadow_list, shadow_details, shadow_analyze
+- shadow_synthesize, shadow_compare
+
+Phase 17: Workspaces Management
+- workspace_list, workspace_details, workspace_stats
+- workspace_export
+
+Phase 18: Real-Time Web/Data Integration
+- rt_search, rt_fetch, rt_youtube
+
+Phase 19: Chat/Conversation Management
+- chat_export, chat_clone, chat_branch, chat_merge
+
+Phase 20: Folder Organization
+- folder_list, folder_details, folder_stats, folder_suggest
+
+Phase 21: PII Scrubbing Tools
+- pii_scan, pii_scrub, pii_report
+
+Phase 22: Embedding Visualization
+- embedding_get, embedding_visualize
+- embedding_cluster, embedding_compare
+
+Phase 23: Health Monitoring Dashboard
+- health_check, health_dashboard, health_alerts
+
+Phase 24: Configuration Profiles
+- profile_list, profile_save, profile_load, profile_compare
+
+Phase 25: Automated Maintenance
+- maintenance_identify, maintenance_cleanup, maintenance_optimize
+
+Total: 113 tools
 
 Original author: Pineapple 🍍
 Fork maintainer: DigitalKredit (v5.0.0+)
@@ -169,6 +202,9 @@ from .phase4_5_tools import (
 
 # Import extension tools (Phases 10-15)
 from .server_extensions import register_extension_tools
+
+# Import extension tools v2 (Phases 16-25)
+from .server_extensions_v2 import register_extension_tools_v2
 
 # Configure logging
 logging.basicConfig(
@@ -3111,10 +3147,23 @@ def main():
     logger.info("Phase 14: Live Context")
     logger.info("Phase 15: Conversation Analytics")
 
-    # Register extension tools
+    # Register extension tools (Phases 10-15)
     register_extension_tools(mcp)
 
-    logger.info("Total tools: 77")
+    # Register extension tools v2 (Phases 16-25)
+    logger.info("Phase 16: Shadow Persona Integration")
+    logger.info("Phase 17: Workspaces Management")
+    logger.info("Phase 18: Real-Time Web/Data Integration")
+    logger.info("Phase 19: Chat/Conversation Management")
+    logger.info("Phase 20: Folder Organization")
+    logger.info("Phase 21: PII Scrubbing Tools")
+    logger.info("Phase 22: Embedding Visualization")
+    logger.info("Phase 23: Health Monitoring Dashboard")
+    logger.info("Phase 24: Configuration Profiles")
+    logger.info("Phase 25: Automated Maintenance")
+    register_extension_tools_v2(mcp)
+
+    logger.info("Total tools: 113")
     mcp.run()
 
 

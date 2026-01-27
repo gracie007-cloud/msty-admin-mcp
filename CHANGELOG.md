@@ -5,6 +5,97 @@ All notable changes to Msty Admin MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.0.0] - 2026-01-27
+
+### Added
+- **Phase 16: Shadow Persona Integration** - Multi-perspective analysis
+  - `shadow_list` - List all configured shadow personas
+  - `shadow_details` - Get shadow persona configuration
+  - `shadow_analyze` - Analyze conversations from shadow perspective
+  - `shadow_synthesize` - Synthesize insights from shadows
+  - `shadow_compare` - Compare responses between main and shadows
+
+- **Phase 17: Workspaces Management** - Data isolation support
+  - `workspace_list` - List all available workspaces
+  - `workspace_details` - Get detailed workspace information
+  - `workspace_stats` - Get workspace statistics
+  - `workspace_export` - Export workspace for backup/migration
+
+- **Phase 18: Real-Time Web/Data Integration** - External data access
+  - `rt_search` - Perform real-time web searches (DuckDuckGo)
+  - `rt_fetch` - Fetch and extract content from URLs
+  - `rt_youtube` - Extract YouTube video transcripts
+
+- **Phase 19: Chat/Conversation Management** - Advanced chat operations
+  - `chat_export` - Export chats to markdown/JSON/text/HTML
+  - `chat_clone` - Clone entire conversations
+  - `chat_branch` - Create branches from specific message points
+  - `chat_merge` - Merge multiple conversations
+
+- **Phase 20: Folder Organization** - Conversation organization
+  - `folder_list` - List all conversation folders
+  - `folder_details` - Get folder contents and metadata
+  - `folder_stats` - Get folder organization statistics
+  - `folder_suggest` - Get AI-powered organization suggestions
+
+- **Phase 21: PII Scrubbing Tools** - Privacy protection
+  - `pii_scan` - Detect 13 types of PII (email, phone, SSN, credit cards, etc.)
+  - `pii_scrub` - Redact PII with configurable replacement
+  - `pii_report` - Generate privacy compliance reports
+  - Severity levels: critical, high, medium, low
+  - GDPR, HIPAA, PCI compliance notes
+
+- **Phase 22: Embedding Visualization** - Document analysis
+  - `embedding_get` - Retrieve embeddings from Knowledge Stacks
+  - `embedding_visualize` - Generate 2D visualization coordinates
+  - `embedding_cluster` - Cluster documents for topic discovery
+  - `embedding_compare` - Calculate document similarity
+  - Pure Python cosine similarity (no numpy required)
+
+- **Phase 23: Health Monitoring Dashboard** - System monitoring
+  - `health_check` - Check individual service health
+  - `health_dashboard` - Comprehensive system status overview
+  - `health_alerts` - Active alerts and warnings
+  - Monitors: Local AI, MLX, LLaMA.cpp, Vibe Proxy services
+
+- **Phase 24: Configuration Profiles** - Settings management
+  - `profile_list` - List saved configuration profiles
+  - `profile_save` - Save current configuration as profile
+  - `profile_load` - Load/preview saved profiles
+  - `profile_compare` - Compare two profiles side-by-side
+  - Includes personas, MCP tools, settings, prompts
+
+- **Phase 25: Automated Maintenance** - System cleanup
+  - `maintenance_identify` - Find cleanup candidates (cache, logs, exports)
+  - `maintenance_cleanup` - Perform cleanup operations (with dry_run mode)
+  - `maintenance_optimize` - Database optimization (VACUUM, ANALYZE)
+  - Health score calculation with recommendations
+
+### Changed
+- Total tools increased from 77 to 113 (+36 new tools)
+- New extension system v2 (`server_extensions_v2.py`)
+- Server version bumped to 8.0.0
+- Updated `__init__.py` with all new exports
+
+### New Modules
+- `src/shadow_personas.py` - Shadow persona management
+- `src/workspaces.py` - Workspace isolation support
+- `src/realtime_data.py` - Web/YouTube integration
+- `src/chat_management.py` - Chat operations
+- `src/folders.py` - Folder organization
+- `src/pii_tools.py` - PII detection and scrubbing
+- `src/embeddings.py` - Embedding visualization
+- `src/dashboard.py` - Health monitoring
+- `src/profiles.py` - Configuration profiles
+- `src/maintenance.py` - Automated maintenance
+- `src/server_extensions_v2.py` - Extension tool registration v2
+
+### Testing
+- Added `tests/test_extensions_v2.py` with comprehensive tests for all new modules
+- PII detection tests for email, phone, SSN patterns
+- Cosine similarity mathematical validation
+- Maintenance dry-run verification
+
 ## [7.0.0] - 2026-01-27
 
 ### Added
