@@ -4,15 +4,15 @@
 
 An MCP (Model Context Protocol) server that transforms Claude into an intelligent system administrator for [Msty Studio Desktop](https://msty.ai). Query databases, manage configurations, orchestrate local AI models, and build tiered AI workflows—all through natural conversation.
 
-[![Version](https://img.shields.io/badge/version-8.0.0-blue.svg)](https://github.com/DBSS/msty-admin-mcp/releases)
+[![Version](https://img.shields.io/badge/version-9.0.0-blue.svg)](https://github.com/DBSS/msty-admin-mcp/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10+-yellow.svg)](https://python.org)
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://apple.com)
 [![Msty](https://img.shields.io/badge/Msty-2.4.0+-purple.svg)](https://msty.ai)
-[![Tests](https://img.shields.io/badge/tests-130%20passing-brightgreen.svg)](tests/)
-[![Tools](https://img.shields.io/badge/tools-113-orange.svg)](src/)
+[![Tests](https://img.shields.io/badge/tests-150%20passing-brightgreen.svg)](tests/)
+[![Tools](https://img.shields.io/badge/tools-155-orange.svg)](src/)
 
-> **v8.0.0** - Ultimate expansion with 113 tools including Shadow Personas, Workspaces, Real-Time Web Integration, Chat Management, PII Scrubbing, Embedding Visualization, Health Dashboard, Configuration Profiles, and Automated Maintenance.
+> **v9.0.0** - Advanced AI Orchestration release with 155 tools! New features include Autonomous Agent Swarms, Intelligent Auto-Router, Cascade Execution, Semantic Caching, Predictive Model Loading, A/B Testing Framework, Cost Intelligence Dashboard, and Dynamic Persona Fusion.
 
 ---
 
@@ -24,16 +24,73 @@ I picked up this project when it had **24 tools** designed for an older Msty Stu
 
 **What I did:**
 - 🔧 **Rewrote the codebase** for Msty 2.4.0+ (services now built into main app)
-- 🏗️ **Refactored** into a clean modular architecture (20+ modules)
-- 📈 **Expanded** from 24 tools to **113 fully functional tools**
-- ✅ **Added comprehensive testing** (230+ tests)
-- 🚀 **Built major new features**: PII scrubbing, embedding visualization, health dashboards, real-time web integration, automated maintenance, and more
+- 🏗️ **Refactored** into a clean modular architecture (30+ modules)
+- 📈 **Expanded** from 24 tools to **155 fully functional tools**
+- ✅ **Added comprehensive testing** (250+ tests)
+- 🚀 **Built major new features**: AI agent swarms, intelligent routing, cascade execution, semantic caching, cost intelligence, and more
 
 This fork is actively maintained and tested against Msty Studio 2.4.0+.
 
 ---
 
-## What's New in v8.0.0
+## What's New in v9.0.0
+
+### Advanced AI Orchestration - 42 New Tools Across 10 New Phases
+
+| Phase | Tools | Description |
+|-------|-------|-------------|
+| **Phase 26: Intelligent Auto-Router** | 4 | Zero-config task classification and model routing |
+| **Phase 27: Autonomous Agent Swarm** | 5 | Spawn specialized AI agents working in parallel |
+| **Phase 28: Background Agents** | 7 | Persistent monitoring agents (Code Sentinel, Doc Keeper) |
+| **Phase 29: Semantic Response Cache** | 5 | Embedding-based similarity caching for cost savings |
+| **Phase 30: Predictive Model Loading** | 3 | Usage pattern analysis for model pre-warming |
+| **Phase 31: Conversation Archaeology** | 5 | Deep search, decision extraction, timeline building |
+| **Phase 32: A/B Testing Framework** | 5 | Model comparison experiments with statistical analysis |
+| **Phase 33: Cascade Execution** | 4 | Confidence-based model escalation (fast→balanced→capable→expert) |
+| **Phase 34: Cost Intelligence** | 7 | Token tracking, budget alerts, local vs cloud comparison |
+| **Phase 35: Persona Fusion** | 6 | Dynamically combine personas for complex tasks |
+
+### New Modules (v9.0.0)
+
+| Module | Purpose |
+|--------|---------|
+| `smart_router.py` | Intelligent task classification and model routing |
+| `agent_swarm.py` | Multi-agent orchestration with parallel execution |
+| `background_agents.py` | Long-running monitoring agents with alerts |
+| `semantic_cache.py` | Embedding-based response caching |
+| `predictive_loader.py` | Usage pattern learning and prediction |
+| `conversation_archaeology.py` | Deep conversation search and analysis |
+| `ab_testing.py` | A/B experiment framework |
+| `cascade.py` | Tiered model execution with confidence |
+| `cost_intelligence.py` | Cost tracking and optimization |
+| `persona_fusion.py` | Dynamic persona combination |
+| `server_extensions_v3.py` | Extension registration v3 |
+
+### Key Features
+
+**🤖 Agent Swarm** - Spawn specialized agents (Code, Research, Writing, Analysis) that work in parallel and synthesize results:
+```
+swarm_spawn "Build a comprehensive analysis of this codebase"
+```
+
+**🎯 Cascade Execution** - Start with fast models, escalate to capable ones only when needed:
+```
+cascade_smart "Complex reasoning task requiring detailed analysis"
+```
+
+**💰 Cost Intelligence** - Track spending, compare local vs cloud, get optimization tips:
+```
+cost_compare_local_cloud  # Shows 95%+ savings using local models
+```
+
+**🔮 Predictive Loading** - Learn your usage patterns and pre-warm models:
+```
+predict_session_start  # "Based on history, you typically code at 9am"
+```
+
+---
+
+## What's in v8.0.0
 
 ### 36 New Tools Across 10 New Phases
 

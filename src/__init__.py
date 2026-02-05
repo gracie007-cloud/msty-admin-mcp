@@ -1,8 +1,9 @@
 """
-Msty Admin MCP Server v8.0.0
+Msty Admin MCP Server v9.0.0
 
 AI-administered Msty Studio Desktop management system with database insights,
-configuration management, local model orchestration, and tiered AI workflows.
+configuration management, local model orchestration, tiered AI workflows,
+and advanced AI orchestration capabilities.
 
 Phase 1: Foundational Tools (Read-Only)
 Phase 2: Configuration Management
@@ -29,8 +30,18 @@ Phase 22: Embedding Visualization
 Phase 23: Health Monitoring Dashboard
 Phase 24: Configuration Profiles
 Phase 25: Automated Maintenance
+Phase 26: Intelligent Auto-Router
+Phase 27: Autonomous Agent Swarm
+Phase 28: Continuous Background Agents
+Phase 29: Semantic Response Cache
+Phase 30: Predictive Model Pre-Loading
+Phase 31: Conversation Archaeology
+Phase 32: A/B Testing Framework
+Phase 33: Cascade Execution
+Phase 34: Cost Intelligence Dashboard
+Phase 35: Persona Fusion
 
-Total: 113 tools
+Total: 155 tools
 
 Original author: Pineapple 🍍
 Fork maintainer: DigitalKredit (v5.0.0+)
@@ -125,6 +136,61 @@ from .profiles import (
 from .maintenance import (
     identify_cleanup_candidates, perform_cleanup,
     optimize_database, generate_maintenance_report
+)
+
+# Import Phase 26-35 extension modules (Advanced AI Orchestration)
+from .smart_router import (
+    classify_task, estimate_complexity, route_request,
+    record_routing_outcome, get_routing_stats, get_model_recommendation,
+    clear_routing_history, TASK_PATTERNS, MODEL_CAPABILITIES
+)
+from .agent_swarm import (
+    create_agent, execute_agent_task, spawn_swarm,
+    get_agent_status, list_agents, terminate_agent,
+    clear_all_agents, get_swarm_results, AgentRole, AgentStatus,
+    ROLE_SYSTEM_PROMPTS
+)
+from .background_agents import (
+    create_background_agent, start_background_agent, stop_background_agent,
+    get_alerts, acknowledge_alert, list_background_agents,
+    delete_background_agent, trigger_agent_run,
+    BackgroundAgentType, AlertSeverity, DEFAULT_CONFIGS
+)
+from .semantic_cache import (
+    cache_response, find_similar_response, get_cache_stats,
+    clear_cache, delete_cache_entry, list_cache_entries,
+    configure_cache, cosine_similarity
+)
+from .predictive_loader import (
+    record_usage, predict_next_task, recommend_models_to_load,
+    get_usage_summary, get_hourly_breakdown, configure_prediction,
+    clear_usage_history, start_session
+)
+from .conversation_archaeology import (
+    search_conversations, find_decisions, build_timeline,
+    extract_action_items, get_conversation_summary,
+    find_related_conversations, get_archaeology_stats
+)
+from .ab_testing import (
+    create_experiment, run_experiment, analyze_experiment,
+    rate_result, get_experiment, list_experiments,
+    delete_experiment, compare_models_quick, ExperimentStatus
+)
+from .cascade import (
+    execute_with_cascade, smart_execute, estimate_response_confidence,
+    get_cascade_config, test_cascade_tiers, DEFAULT_CASCADE_TIERS
+)
+from .cost_intelligence import (
+    record_usage as cost_record_usage, get_usage_summary as cost_usage_summary,
+    compare_local_vs_cloud, get_daily_breakdown, set_session_budget,
+    get_budget_alerts, get_optimization_recommendations,
+    get_cost_projection, export_usage_data, CLOUD_COSTS_PER_1K
+)
+from .persona_fusion import (
+    fuse_personas, suggest_fusion_for_task, get_fused_persona,
+    list_fused_personas, list_available_personas,
+    analyze_persona_compatibility, delete_fused_persona,
+    quick_fuse_for_task, PERSONA_TEMPLATES
 )
 
 # Lazy import for server module (requires mcp package)
@@ -274,4 +340,97 @@ __all__ = [
     "perform_cleanup",
     "optimize_database",
     "generate_maintenance_report",
+    # Smart Router (Phase 26)
+    "classify_task",
+    "estimate_complexity",
+    "route_request",
+    "record_routing_outcome",
+    "get_routing_stats",
+    "get_model_recommendation",
+    "clear_routing_history",
+    "TASK_PATTERNS",
+    "MODEL_CAPABILITIES",
+    # Agent Swarm (Phase 27)
+    "create_agent",
+    "execute_agent_task",
+    "spawn_swarm",
+    "get_agent_status",
+    "list_agents",
+    "terminate_agent",
+    "clear_all_agents",
+    "get_swarm_results",
+    "AgentRole",
+    "AgentStatus",
+    "ROLE_SYSTEM_PROMPTS",
+    # Background Agents (Phase 28)
+    "create_background_agent",
+    "start_background_agent",
+    "stop_background_agent",
+    "get_alerts",
+    "acknowledge_alert",
+    "list_background_agents",
+    "delete_background_agent",
+    "trigger_agent_run",
+    "BackgroundAgentType",
+    "AlertSeverity",
+    "DEFAULT_CONFIGS",
+    # Semantic Cache (Phase 29)
+    "cache_response",
+    "find_similar_response",
+    "delete_cache_entry",
+    "list_cache_entries",
+    "configure_cache",
+    "cosine_similarity",
+    # Predictive Loader (Phase 30)
+    "record_usage",
+    "predict_next_task",
+    "recommend_models_to_load",
+    "configure_prediction",
+    "start_session",
+    # Conversation Archaeology (Phase 31)
+    "search_conversations",
+    "find_decisions",
+    "build_timeline",
+    "extract_action_items",
+    "get_conversation_summary",
+    "find_related_conversations",
+    "get_archaeology_stats",
+    # A/B Testing (Phase 32)
+    "create_experiment",
+    "run_experiment",
+    "analyze_experiment",
+    "rate_result",
+    "get_experiment",
+    "list_experiments",
+    "delete_experiment",
+    "compare_models_quick",
+    "ExperimentStatus",
+    # Cascade Execution (Phase 33)
+    "execute_with_cascade",
+    "smart_execute",
+    "estimate_response_confidence",
+    "get_cascade_config",
+    "test_cascade_tiers",
+    "DEFAULT_CASCADE_TIERS",
+    # Cost Intelligence (Phase 34)
+    "cost_record_usage",
+    "cost_usage_summary",
+    "compare_local_vs_cloud",
+    "get_daily_breakdown",
+    "set_session_budget",
+    "get_budget_alerts",
+    "get_optimization_recommendations",
+    "get_cost_projection",
+    "export_usage_data",
+    "CLOUD_COSTS_PER_1K",
+    # Persona Fusion (Phase 35)
+    "fuse_personas",
+    "suggest_fusion_for_task",
+    "get_fused_persona",
+    "list_fused_personas",
+    "list_available_personas",
+    "analyze_persona_compatibility",
+    "delete_fused_persona",
+    "quick_fuse_for_task",
+    "PERSONA_TEMPLATES",
 ]

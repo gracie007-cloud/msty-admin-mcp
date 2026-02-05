@@ -5,6 +5,102 @@ All notable changes to Msty Admin MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [9.0.0] - 2026-02-05
+
+### Added
+- **Phase 26: Intelligent Auto-Router** - Zero-config smart model routing
+  - `router_classify` - Classify tasks for optimal model selection
+  - `router_route` - Route requests to best available model
+  - `router_stats` - View routing statistics and history
+  - `router_recommend` - Get model recommendations by task type
+
+- **Phase 27: Autonomous Agent Swarm** - Multi-agent parallel execution
+  - `swarm_spawn` - Spawn specialized agents (code, research, writing, analysis)
+  - `swarm_create_agent` - Create individual agents with roles
+  - `swarm_execute` - Execute tasks with specific agents
+  - `swarm_list` - List all agents and their status
+  - `swarm_results` - Get results from swarm executions
+
+- **Phase 28: Continuous Background Agents** - Persistent monitoring
+  - `bg_agent_create` - Create background monitoring agents
+  - `bg_agent_start` / `bg_agent_stop` - Control agent lifecycle
+  - `bg_agent_list` - List all background agents
+  - `bg_agent_trigger` - Manually trigger agent runs
+  - `bg_alerts` / `bg_alert_ack` - Manage generated alerts
+  - Agent types: Code Sentinel, Doc Keeper, Research Watcher, Meeting Prep
+
+- **Phase 29: Semantic Response Cache** - Embedding-based caching
+  - `sem_cache_store` - Cache responses with semantic embeddings
+  - `sem_cache_find` - Find similar cached responses
+  - `sem_cache_stats` - View cache statistics
+  - `sem_cache_list` - List cached entries
+  - `sem_cache_config` - Configure similarity thresholds
+  - Cosine similarity matching for "close enough" responses
+
+- **Phase 30: Predictive Model Pre-Loading** - Usage pattern learning
+  - `predict_task` - Predict next likely task type
+  - `predict_models` - Recommend models to pre-load
+  - `predict_session_start` - Start session with predictions
+  - Learns from time-of-day and day-of-week patterns
+
+- **Phase 31: Conversation Archaeology** - Deep conversation analysis
+  - `archaeology_search` - Search across all historical conversations
+  - `archaeology_decisions` - Extract decisions from conversations
+  - `archaeology_timeline` - Build topic timelines
+  - `archaeology_actions` - Extract action items and TODOs
+  - `archaeology_related` - Find related conversations
+
+- **Phase 32: A/B Testing Framework** - Model comparison experiments
+  - `ab_create` - Create A/B experiments with multiple prompts/models
+  - `ab_run` - Execute experiments
+  - `ab_analyze` - Statistical analysis of results
+  - `ab_list` - List all experiments
+  - `ab_quick_compare` - Quick model comparison
+
+- **Phase 33: Cascade Execution** - Confidence-based escalation
+  - `cascade_execute` - Execute with tier-based escalation
+  - `cascade_smart` - Smart execution with auto-tier selection
+  - `cascade_config` - View cascade configuration
+  - `cascade_test_tiers` - Test model availability per tier
+  - 4 tiers: fast → balanced → capable → expert
+
+- **Phase 34: Cost Intelligence Dashboard** - Token and cost tracking
+  - `cost_summary` - Get usage and cost summary
+  - `cost_compare_local_cloud` - Compare local vs cloud costs
+  - `cost_daily` - Day-by-day cost breakdown
+  - `cost_budget_set` - Set session budget limits
+  - `cost_alerts` - View budget alerts
+  - `cost_optimize` - Get optimization recommendations
+  - `cost_projection` - Project future costs
+
+- **Phase 35: Persona Fusion** - Dynamic persona combination
+  - `fusion_create` - Create fused personas from multiple sources
+  - `fusion_suggest` - Suggest personas for a task
+  - `fusion_quick` - Auto-create optimal fusion for task
+  - `fusion_list` - List fused personas
+  - `fusion_available` - List available persona templates
+  - `fusion_compatibility` - Analyze persona compatibility
+  - 8 built-in templates: coder, researcher, writer, analyst, teacher, critic, strategist, creative
+
+### Changed
+- Total tools increased from 113 to 155 (+42 new tools)
+- New extension system v3 (`server_extensions_v3.py`)
+- Server version bumped to 9.0.0
+- Updated `__init__.py` with all new exports
+
+### New Modules
+- `src/smart_router.py` - Intelligent task classification and routing
+- `src/agent_swarm.py` - Multi-agent orchestration
+- `src/background_agents.py` - Persistent monitoring agents
+- `src/semantic_cache.py` - Embedding-based response caching
+- `src/predictive_loader.py` - Usage pattern prediction
+- `src/conversation_archaeology.py` - Deep conversation analysis
+- `src/ab_testing.py` - A/B testing framework
+- `src/cascade.py` - Tiered cascade execution
+- `src/cost_intelligence.py` - Cost tracking and optimization
+- `src/persona_fusion.py` - Dynamic persona combination
+- `src/server_extensions_v3.py` - Extension tool registration v3
+
 ## [8.0.0] - 2026-01-27
 
 ### Added
