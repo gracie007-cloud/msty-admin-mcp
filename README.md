@@ -225,11 +225,11 @@ pip install -r requirements.txt
 
 3. **Restart Claude Desktop** (Cmd+Q, then reopen)
 
-4. You should see "msty-admin" in your available tools with **113 tools** loaded.
+4. You should see "msty-admin" in your available tools with **155 tools** loaded.
 
 ---
 
-## Available Tools (113 Total)
+## Available Tools (155 Total)
 
 ### Phase 1: Installation & Health (7 tools)
 | Tool | Description |
