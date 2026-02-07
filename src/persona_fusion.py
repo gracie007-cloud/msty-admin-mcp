@@ -20,9 +20,22 @@ from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass, field
 
 from .paths import get_msty_paths
-from .database import execute_query
 
 logger = logging.getLogger("msty-admin-mcp")
+
+
+def _safe_query_personas(query: str, limit: int = 100) -> Dict[str, Any]:
+    """Safely query Msty personas database if available."""
+    try:
+        from .database import query_database
+        paths = get_msty_paths()
+        db_path = paths.get("database_path")
+        if db_path:
+            rows = query_database(db_path, query)
+            return {"rows": rows[:limit] if rows else []}
+    except Exception:
+        pass
+    return {"rows": []}
 
 
 @dataclass
@@ -101,9 +114,8 @@ PERSONA_TEMPLATES = {
 def _load_msty_personas() -> List[Dict[str, Any]]:
     """Load personas from Msty database."""
     try:
-        result = execute_query(
-            "SELECT id, name, system_prompt FROM personas",
-            limit=100
+        result = _safe_query_personas(
+            "SELECT id, name, system_prompt FROM personas LIMIT 100"
         )
         return result.get("rows", [])
     except Exception as e:
@@ -132,9 +144,8 @@ def _get_persona_by_name(name: str) -> Optional[Dict[str, Any]]:
 
     # Try Msty database
     try:
-        result = execute_query(
-            f"SELECT id, name, system_prompt FROM personas WHERE name LIKE '%{name}%'",
-            limit=1
+        result = _safe_query_personas(
+            f"SELECT id, name, system_prompt FROM personas WHERE name LIKE '%{name}%' LIMIT 1"
         )
         if result.get("rows"):
             row = result["rows"][0]
@@ -398,7 +409,7 @@ def list_available_personas() -> Dict[str, Any]:
     # Try to load Msty personas
     msty_personas = []
     try:
-        result = execute_query(
+        result = _safe_query_personas(
             "SELECT id, name, system_prompt FROM personas LIMIT 20"
         )
         for row in result.get("rows", []):
