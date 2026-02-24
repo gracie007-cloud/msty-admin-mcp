@@ -15,11 +15,37 @@ logger = logging.getLogger("msty-admin-mcp")
 
 
 def get_database_connection(db_path: str) -> Optional[sqlite3.Connection]:
-    """Get a read-only connection to Msty database"""
+    """Get a read-only connection to Msty database.
+
+    Uses ``immutable=1`` URI mode so SQLite never waits for the app's write
+    lock — reads succeed even while Msty Studio is running.  Falls back to
+    ``mode=ro`` and then a plain connection if the immutable flag is not
+    supported by the installed SQLite build.
+    """
     if not db_path or not Path(db_path).exists():
         return None
+
+    def _try_connect(uri: str) -> Optional[sqlite3.Connection]:
+        try:
+            conn = sqlite3.connect(uri, uri=True, timeout=5, check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            return conn
+        except sqlite3.Error:
+            return None
+
+    # 1. Immutable snapshot — never blocks on a lock held by another process
+    conn = _try_connect(f"file:{db_path}?mode=ro&immutable=1")
+    if conn:
+        return conn
+
+    # 2. Read-only mode — may block briefly if WAL checkpoint is running
+    conn = _try_connect(f"file:{db_path}?mode=ro")
+    if conn:
+        return conn
+
+    # 3. Plain fallback (e.g. very old SQLite that doesn't support URI flags)
     try:
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        conn = sqlite3.connect(db_path, timeout=5, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         return conn
     except sqlite3.Error as e:
