@@ -16,12 +16,25 @@ New tools for Phase 26-35 (Advanced AI Orchestration):
 These extensions add 42 new tools to the server (Phases 26-35).
 """
 
-import json
-import logging
-from datetime import datetime
-from typing import Optional, List, Dict, Any
-
+import sys
+from pathlib import Path
 from mcp.server.fastmcp import FastMCP
+
+# Try to import ResearchOrchestrator from msty-openclaw-bridge
+try:
+    BRIDGE_PATH = Path("G:/ai-agentic-dev/msty-openclaw-bridge")
+    if str(BRIDGE_PATH) not in sys.path:
+        sys.path.append(str(BRIDGE_PATH))
+    from apps.research_agent.orchestrator import ResearchOrchestrator
+    from apps.music_producer.producer import MusicProducer
+    from apps.voice_assistant.orchestrator import VoiceOrchestrator
+    RESEARCH_AVAILABLE = True
+    MUSIC_AVAILABLE = True
+    VOICE_AVAILABLE = True
+except ImportError:
+    RESEARCH_AVAILABLE = False
+    MUSIC_AVAILABLE = False
+    VOICE_AVAILABLE = False
 
 # Import new modules (Phase 26-35)
 from .smart_router import (
@@ -947,7 +960,87 @@ def register_extension_tools_v3(mcp: FastMCP):
         result = analyze_persona_compatibility(persona_list)
         return json.dumps(result, indent=2, default=str)
 
-    logger.info("Registered 42 extension tools (Phases 26-35)")
+    # =========================================================================
+    # Phase 36: Research Agent (Bridge to OpenClaw)
+    # =========================================================================
+
+    @mcp.tool()
+    def research_mission(query: str) -> str:
+        """
+        Execute a systematic AI-powered research mission.
+        Integrates ScraperAI for discovery and Msty for synthesis.
+
+        Args:
+            query: The research question or topic
+            
+        Returns:
+            JSON with research report and methodology trace
+        """
+        if not RESEARCH_AVAILABLE:
+            return json.dumps({
+                "error": "Research Agent components not found in msty-openclaw-bridge.",
+                "status": "failed"
+            }, indent=2)
+            
+        try:
+            orchestrator = ResearchOrchestrator()
+            result = orchestrator.conduct_research(query)
+            return json.dumps(result, indent=2, default=str)
+        except Exception as e:
+            return json.dumps({
+                "error": f"Research execution failed: {str(e)}",
+                "status": "failed"
+            }, indent=2)
+
+    @mcp.tool()
+    def music_production(vibe: str) -> str:
+        """
+        Produce a high-quality song based on a vibe description.
+        Generates lyrics locally via Msty and music via Suno.
+
+        Args:
+            vibe: Description of the song's style, mood, and topic
+            
+        Returns:
+            JSON with song details and file paths
+        """
+        if not MUSIC_AVAILABLE:
+            return json.dumps({
+                "error": "Music Producer components not found in msty-openclaw-bridge.",
+                "status": "failed"
+            }, indent=2)
+            
+        try:
+            producer = MusicProducer()
+            result = producer.produce_song(vibe)
+            return json.dumps(result, indent=2, default=str)
+        except Exception as e:
+            return json.dumps({
+                "error": f"Music production failed: {str(e)}",
+                "status": "failed"
+            }, indent=2)
+
+    @mcp.tool()
+    def start_voice_assistant() -> str:
+        """
+        Start the local voice-controlled AI assistant.
+        Enables hands-free control of browser, music, research, and system.
+        
+        Returns:
+            Status message
+        """
+        if not VOICE_AVAILABLE:
+            return "Voice Assistant components not found in msty-openclaw-bridge."
+            
+        try:
+            orchestrator = VoiceOrchestrator()
+            # Run in a background thread to avoid blocking the MCP server
+            threading.Thread(target=orchestrator.run, daemon=True).start()
+            return "Local voice assistant activated. You can now speak commands."
+        except Exception as e:
+            return f"Failed to start voice assistant: {str(e)}"
+
+    logger.info("Registered 45 extension tools (Phases 26-36)")
 
 
 __all__ = ["register_extension_tools_v3"]
